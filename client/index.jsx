@@ -15,14 +15,14 @@ const TYPE_LABELS = {
 
 /** Inline SVG marks, so the panel never fetches an image from outside. */
 const ICONS = {
-  local: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="#8aa0b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'),
-  s3: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="#e0a23c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>'),
-  webdav: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="#5aa9e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 .6-8A6 6 0 0 0 6 11a3.5 3.5 0 0 0 .5 7z"/></svg>'),
-  yadisk: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#fc3f1d"/><path d="M9 18V9.2c0-2 1.3-3.2 3.3-3.2H15v2.4h-2.2c-.8 0-1.2.4-1.2 1.2V11l3.6 7h-2.7l-3-6v6z" fill="#fff"/></svg>'),
-  edit: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16z"/></svg>'),
-  test: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/></svg>'),
-  primary: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.9 5.9 6.1.9-4.4 4.3 1 6.4-5.6-3-5.6 3 1-6.4L3 9.8l6.1-.9z"/></svg>'),
-  remove: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>'),
+  local: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#8aa0b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'),
+  s3: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#e0a23c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>'),
+  webdav: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#5aa9e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 .6-8A6 6 0 0 0 6 11a3.5 3.5 0 0 0 .5 7z"/></svg>'),
+  yadisk: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#fc3f1d"/><path d="M9 18V9.2c0-2 1.3-3.2 3.3-3.2H15v2.4h-2.2c-.8 0-1.2.4-1.2 1.2V11l3.6 7h-2.7l-3-6v6z" fill="#fff"/></svg>'),
+  edit: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16z"/></svg>'),
+  test: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/></svg>'),
+  primary: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.9 5.9 6.1.9-4.4 4.3 1 6.4-5.6-3-5.6 3 1-6.4L3 9.8l6.1-.9z"/></svg>'),
+  remove: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>'),
 }
 
 const styles = {
@@ -38,7 +38,7 @@ const styles = {
   icon: { width: 16, height: 16, display: 'block' },
   typeIcon: { width: 22, height: 22, marginRight: 8, flex: '0 0 auto' },
   nameCell: { display: 'flex', alignItems: 'flex-start', gap: 0 },
-  badges: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' },
+  badges: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'nowrap' },
   pill: { display: 'inline-block', padding: '1px 7px', borderRadius: 10, fontSize: 12, whiteSpace: 'nowrap', cursor: 'help' },
   pillOk: { background: 'rgba(60,180,90,0.28)' },
   pillGrey: { background: 'rgba(128,128,128,0.28)' },
@@ -108,7 +108,7 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
     : provider.status?.message ?? state
   const caps = capabilities?.[provider.type] ?? {}
   const free = bytes(provider.status?.freeBytes)
-  const permission = (allowed, hint) => jsx(Pill, { tone: allowed ? styles.pillOk : styles.pillBad, hint, children: hint.slice(0, 1).toUpperCase() })
+  const permission = (letter, allowed, hint) => jsx(Pill, { tone: allowed ? styles.pillOk : styles.pillBad, hint, children: letter })
 
   return jsx('tr', {
     children: [
@@ -124,9 +124,9 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
       ] }) }),
       jsx('td', { style: styles.td, children: jsx('div', { style: styles.badges, children: [
         jsx(Pill, { tone: stateTone, hint: stateHint, children: state === 'unknown' ? '?' : state }),
-        permission(caps.get === true, t('hintRead')),
-        permission(caps.put === true, t('hintWrite')),
-        permission(caps.delete === true, t('hintDelete')),
+        permission('R', caps.get === true, t('hintRead')),
+        permission('W', caps.put === true, t('hintWrite')),
+        permission('D', caps.delete === true, t('hintDelete')),
         free === null
           ? jsx(Pill, { tone: styles.pillGrey, hint: t('hintFreeUnknown'), children: '—' })
           : jsx(Pill, { tone: styles.pillFree, hint: t('hintFree'), children: free }),
@@ -346,9 +346,9 @@ export function StoragePage(props) {
     providers.length === 0 && !loading ? jsx('p', { style: styles.hint, children: t('empty') }) : null,
     providers.length === 0 ? null : jsx('table', { style: styles.table, children: [
       jsx('thead', { children: jsx('tr', { children: [
-        jsx('th', { style: styles.th, children: t('label') }),
-        jsx('th', { style: { ...styles.th, width: 1 }, children: '' }),
-        jsx('th', { style: { ...styles.th, width: 1 }, children: '' }),
+        jsx('th', { style: { ...styles.th, width: '100%' }, children: t('label') }),
+        jsx('th', { style: { ...styles.th, whiteSpace: 'nowrap' }, children: '' }),
+        jsx('th', { style: { ...styles.th, whiteSpace: 'nowrap' }, children: '' }),
       ] }) }),
       jsx('tbody', { children: providers.map(provider => jsx(StorageRow, {
         provider,
