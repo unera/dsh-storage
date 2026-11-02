@@ -386,12 +386,27 @@ export function StoragePage(props) {
 
   useEffect(() => { load() }, [])
 
-  const act = async (run) => {
+  /** What the user can see: if this does not change, the panel is stale. */
+  const signature = list => JSON.stringify(list.map(item => [item.id, item.role, item.enabled, item.status?.state, item.status?.checkedAt]))
+
+  /**
+   * Run a mutation, then keep reading until what the server reports differs from
+   * what was on screen before. Waiting for a length change was enough for "add",
+   * but a role or status change keeps the length, so the first read returned the
+   * old document and the panel showed one click behind.
+   */
+  const act = async (run, optimistic) => {
+    const before = signature(providers)
+    if (typeof optimistic === 'function') setProviders(previous => optimistic(previous))
     setBusy(true)
     setError(null)
     try {
       await run()
-      await reloadAfterWrite(providers.length)
+      for (let attempt = 0; attempt < 25; attempt += 1) {
+        const next = await fetchOnce()
+        if (signature(next) !== before) return
+        await new Promise(resolve => setTimeout(resolve, 150))
+      }
     } catch (problem) {
       setError(problem.message)
       await load()
@@ -444,7 +459,11 @@ export function StoragePage(props) {
         t,
         busy,
         onTest: id => act(async () => { await request(`/providers/${indexOf(id)}/test`, { method: 'POST' }) }),
-        onPrimary: id => act(async () => { await request(`/providers/${indexOf(id)}/primary`, { method: 'POST' }) }),
+        onPrimary: id => act(
+          async () => { await request(`/providers/${indexOf(id)}/primary`, { method: 'POST' }) },
+          // Show the switch immediately; the loop above only confirms it.
+          previous => previous.map(item => ({ ...item, role: item.id === id ? 'primary' : 'secondary' })),
+        ),
         onEdit: id => { setEditingId(id); setAdding(false) },
         onRemove: id => act(async () => {
           if (typeof window !== 'undefined' && typeof window.confirm === 'function' && !window.confirm(t('confirmRemove'))) return

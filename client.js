@@ -482,12 +482,19 @@ function StoragePage(props) {
   (0, import_react.useEffect)(() => {
     load();
   }, []);
-  const act = async (run) => {
+  const signature = (list) => JSON.stringify(list.map((item) => [item.id, item.role, item.enabled, item.status?.state, item.status?.checkedAt]));
+  const act = async (run, optimistic) => {
+    const before = signature(providers);
+    if (typeof optimistic === "function") setProviders((previous) => optimistic(previous));
     setBusy(true);
     setError(null);
     try {
       await run();
-      await reloadAfterWrite(providers.length);
+      for (let attempt = 0; attempt < 25; attempt += 1) {
+        const next = await fetchOnce();
+        if (signature(next) !== before) return;
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
     } catch (problem) {
       setError(problem.message);
       await load();
@@ -539,9 +546,13 @@ function StoragePage(props) {
         onTest: (id) => act(async () => {
           await request(`/providers/${indexOf(id)}/test`, { method: "POST" });
         }),
-        onPrimary: (id) => act(async () => {
-          await request(`/providers/${indexOf(id)}/primary`, { method: "POST" });
-        }),
+        onPrimary: (id) => act(
+          async () => {
+            await request(`/providers/${indexOf(id)}/primary`, { method: "POST" });
+          },
+          // Show the switch immediately; the loop above only confirms it.
+          (previous) => previous.map((item) => ({ ...item, role: item.id === id ? "primary" : "secondary" }))
+        ),
         onEdit: (id) => {
           setEditingId(id);
           setAdding(false);
