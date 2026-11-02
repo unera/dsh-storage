@@ -162,7 +162,9 @@ var styles = {
   typeIcon: { width: 22, height: 22, marginRight: 8, flex: "0 0 auto" },
   nameCell: { display: "flex", alignItems: "flex-start", gap: 0 },
   badges: { display: "flex", gap: 4, alignItems: "center", flexWrap: "nowrap" },
-  pill: { display: "inline-block", padding: "1px 7px", borderRadius: 10, fontSize: 12, whiteSpace: "nowrap", cursor: "help" },
+  // No `cursor: help`: a question-mark pointer on a small pill reads as a puzzle
+  // rather than as a tooltip, and the hint appears on hover anyway.
+  pill: { display: "inline-block", padding: "1px 7px", borderRadius: 10, fontSize: 12, whiteSpace: "nowrap" },
   pillOk: { background: "rgba(60,180,90,0.28)" },
   pillGrey: { background: "rgba(128,128,128,0.28)" },
   pillBad: { background: "rgba(220,80,70,0.28)" },
