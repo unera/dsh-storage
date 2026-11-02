@@ -5,6 +5,13 @@ import { DICTIONARIES, NS } from './locales.js'
 const SECTION_ID = 'storage'
 const API = '/__fs'
 
+/** Type ids are for the API; a person reads these. */
+const TYPE_LABELS = {
+  local: 'Каталог на этом хосте',
+  s3: 'S3-совместимый',
+  webdav: 'WebDAV',
+}
+
 const styles = {
   intro: { opacity: 0.75, margin: '0 0 16px', lineHeight: 1.5 },
   table: { width: '100%', borderCollapse: 'collapse', marginBottom: 16 },
@@ -48,14 +55,17 @@ function bytes(value) {
 }
 
 /** One row of the storages table. */
-function StorageRow({ provider, t, onTest, onPrimary, onRemove, busy }) {
+function StorageRow({ provider, t, onTest, onPrimary, onRemove, onEdit, busy }) {
   const stateTone = provider.status?.state === 'ok' ? styles.ok : provider.status?.state === 'unknown' ? {} : styles.bad
   const free = bytes(provider.status?.freeBytes)
   return jsx('tr', {
     children: [
       jsx('td', { style: styles.td, children: [
         jsx('strong', { children: provider.label }),
-        jsx('div', { style: styles.hint, children: `${provider.type} · ${provider.id}${provider.basePath === '' ? '' : ` · ${provider.basePath}`}` }),
+        jsx('div', { style: styles.hint, children: `${TYPE_LABELS[provider.type] ?? provider.type} · ${provider.id}${provider.basePath === '' ? '' : ` · ${provider.basePath}`}` }),
+        provider.options?.root === undefined ? null : jsx('div', { style: styles.hint, children: provider.options.root }),
+        provider.options?.baseUrl === undefined ? null : jsx('div', { style: styles.hint, children: provider.options.baseUrl }),
+        provider.options?.bucket === undefined ? null : jsx('div', { style: styles.hint, children: `${provider.options.bucket}${provider.options.endpoint === undefined ? '' : ` · ${provider.options.endpoint}`}` }),
       ] }),
       jsx('td', { style: styles.td, children: [
         jsx('span', { style: { ...styles.badge, ...stateTone }, children: provider.status?.state ?? 'unknown' }),
@@ -67,6 +77,7 @@ function StorageRow({ provider, t, onTest, onPrimary, onRemove, busy }) {
         jsx('div', { style: styles.hint, children: free === null ? t('unknownFree') : `${t('free')}: ${free}` }),
       ] }),
       jsx('td', { style: styles.td, children: [
+        jsx('button', { style: styles.button, disabled: busy, onClick: () => onEdit(provider.id), children: t('edit') }),
         jsx('button', { style: styles.button, disabled: busy, onClick: () => onTest(provider.id), children: t('test') }),
         provider.role === 'primary' ? null : jsx('button', { style: styles.button, disabled: busy, onClick: () => onPrimary(provider.id), children: t('makePrimary') }),
         jsx('button', { style: styles.button, disabled: busy, onClick: () => onRemove(provider.id), children: t('remove') }),
@@ -75,36 +86,52 @@ function StorageRow({ provider, t, onTest, onPrimary, onRemove, busy }) {
   })
 }
 
-/** The add form; fields depend on the chosen type. */
-function AddForm({ types, t, onCancel, onSaved }) {
-  const [type, setType] = useState(types[0] ?? 'local')
-  const [label, setLabel] = useState('')
-  const [basePath, setBasePath] = useState('')
-  const [root, setRoot] = useState('')
-  const [bucket, setBucket] = useState('')
-  const [region, setRegion] = useState('')
-  const [endpoint, setEndpoint] = useState('')
+/**
+ * The entry form. With `initial` it edits an existing storage (PATCH), without it
+ * it creates a new one (POST). The fields depend on the type, and the type itself
+ * cannot change while editing: an existing entry keeps its driver.
+ */
+function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
+  const editing = initial !== undefined
+  const [type, setType] = useState(initial?.type ?? types[0] ?? 'local')
+  const [label, setLabel] = useState(initial?.label ?? '')
+  const [basePath, setBasePath] = useState(initial?.basePath ?? '')
+  const [root, setRoot] = useState(initial?.options?.root ?? '')
+  const [bucket, setBucket] = useState(initial?.options?.bucket ?? '')
+  const [region, setRegion] = useState(initial?.options?.region ?? '')
+  const [endpoint, setEndpoint] = useState(initial?.options?.endpoint ?? '')
+  const [baseUrl, setBaseUrl] = useState(initial?.options?.baseUrl ?? '')
   const [secret, setSecret] = useState('')
-  const [primary, setPrimary] = useState(false)
+  const [enabled, setEnabled] = useState(initial?.enabled !== false)
+  const [readOnly, setReadOnly] = useState(initial?.readOnly === true)
+  // A lone storage must be primary, otherwise every tool call without an explicit
+  // id fails with "no storage is marked primary" and the user has no idea why.
+  const autoPrimary = first === true
+  const [primary, setPrimary] = useState(initial?.role === 'primary' || first === true)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+
+  const optionsFor = () => {
+    if (type === 'local') return { root: root.trim() }
+    if (type === 'webdav') return { baseUrl: baseUrl.trim() }
+    return { bucket: bucket.trim(), ...(region.trim() === '' ? {} : { region: region.trim() }), ...(endpoint.trim() === '' ? {} : { endpoint: endpoint.trim() }) }
+  }
 
   const submit = async () => {
     setBusy(true)
     setError(null)
     try {
-      const options = type === 'local' ? { root: root.trim() } : { bucket: bucket.trim(), ...(region.trim() === '' ? {} : { region: region.trim() }), ...(endpoint.trim() === '' ? {} : { endpoint: endpoint.trim() }) }
-      await request('/providers', {
-        method: 'POST',
-        body: {
-          type,
-          label: label.trim() === '' ? undefined : label.trim(),
-          basePath: basePath.trim(),
-          role: primary ? 'primary' : 'secondary',
-          options,
-          ...(secret.trim() === '' ? {} : { secret: secret.trim() }),
-        },
-      })
+      const payload = {
+        label: label.trim(),
+        basePath: basePath.trim(),
+        role: primary || autoPrimary ? 'primary' : 'secondary',
+        enabled,
+        readOnly,
+        options: optionsFor(),
+        ...(secret.trim() === '' ? {} : { secret: secret.trim() }),
+      }
+      if (editing) await request(`/providers/${initial.index}`, { method: 'PATCH', body: payload })
+      else await request('/providers', { method: 'POST', body: { ...payload, type } })
       await onSaved()
     } catch (problem) {
       setError(problem.message)
@@ -117,7 +144,7 @@ function AddForm({ types, t, onCancel, onSaved }) {
     jsx('div', { style: styles.row, children: [
       jsx('label', { style: styles.field, children: [
         jsx('span', { children: t('type') }),
-        jsx('select', { style: styles.input, value: type, onChange: event => setType(event.target.value), children: types.map(item => jsx('option', { value: item, children: item }, item)) }),
+        jsx('select', { style: styles.input, value: type, disabled: editing, onChange: event => setType(event.target.value), children: types.map(item => jsx('option', { value: item, children: TYPE_LABELS[item] ?? item }, item)) }),
       ] }),
       jsx('label', { style: styles.field, children: [
         jsx('span', { children: t('label') }),
@@ -135,6 +162,13 @@ function AddForm({ types, t, onCancel, onSaved }) {
           jsx('span', { children: t('root') }),
           jsx('input', { style: styles.input, value: root, placeholder: '/srv/data', onChange: event => setRoot(event.target.value) }),
           jsx('span', { style: styles.hint, children: t('rootHint') }),
+        ] }),
+      ] })
+      : type === 'webdav'
+      ? jsx('div', { style: styles.row, children: [
+        jsx('label', { style: styles.field, children: [
+          jsx('span', { children: 'baseUrl' }),
+          jsx('input', { style: styles.input, value: baseUrl, placeholder: 'https://cloud.example/remote.php/dav/files/user', onChange: event => setBaseUrl(event.target.value) }),
         ] }),
       ] })
       : jsxs('div', { children: [
@@ -156,14 +190,22 @@ function AddForm({ types, t, onCancel, onSaved }) {
         jsx('label', { style: styles.field, children: [
           jsx('span', { children: t('secret') }),
           jsx('textarea', { style: { ...styles.input, minHeight: 60 }, value: secret, onChange: event => setSecret(event.target.value) }),
-          jsx('span', { style: styles.hint, children: t('secretHint') }),
+          jsx('span', { style: styles.hint, children: editing ? t('secretKeep') : t('secretHint') }),
         ] }),
       ] }),
     error === null ? null : jsx('div', { style: styles.error, children: error }),
     jsx('div', { style: { marginTop: 10 }, children: [
       jsx('label', { style: { marginRight: 12 }, children: [
-        jsx('input', { type: 'checkbox', checked: primary, onChange: event => setPrimary(event.target.checked) }),
+        jsx('input', { type: 'checkbox', checked: primary || autoPrimary, disabled: autoPrimary, onChange: event => setPrimary(event.target.checked) }),
         ` ${t('primary')}`,
+      ] }),
+      jsx('label', { style: { marginRight: 12 }, children: [
+        jsx('input', { type: 'checkbox', checked: enabled, onChange: event => setEnabled(event.target.checked) }),
+        ` ${t('enabledLabel')}`,
+      ] }),
+      jsx('label', { style: { marginRight: 12 }, children: [
+        jsx('input', { type: 'checkbox', checked: readOnly, onChange: event => setReadOnly(event.target.checked) }),
+        ` ${t('readOnlyLabel')}`,
       ] }),
       jsx('button', { style: styles.button, disabled: busy, onClick: submit, children: t('save') }),
       jsx('button', { style: styles.button, disabled: busy, onClick: onCancel, children: t('cancel') }),
@@ -180,17 +222,41 @@ export function StoragePage(props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+
+  const fetchOnce = async () => {
+    const body = await request('/providers')
+    const next = Array.isArray(body.providers) ? body.providers : []
+    if (Array.isArray(body.types) && body.types.length > 0) setTypes(body.types)
+    setProviders(next)
+    return next
+  }
 
   const load = async () => {
     setError(null)
     try {
-      const body = await request('/providers')
-      setProviders(Array.isArray(body.providers) ? body.providers : [])
-      if (Array.isArray(body.types) && body.types.length > 0) setTypes(body.types)
+      await fetchOnce()
     } catch (problem) {
       setError(problem.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  /**
+   * After a write the settings document lands a moment later, so one immediate
+   * read can still see the old list. Retry briefly instead of showing a stale
+   * panel to someone who just pressed Save.
+   */
+  const reloadAfterWrite = async (expectedAtLeast) => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      try {
+        const next = await fetchOnce()
+        if (next.length >= expectedAtLeast) return
+      } catch {
+        // keep trying; a real failure surfaces on the next read
+      }
+      await new Promise(resolve => setTimeout(resolve, 150))
     }
   }
 
@@ -201,9 +267,10 @@ export function StoragePage(props) {
     setError(null)
     try {
       await run()
-      await load()
+      await reloadAfterWrite(providers.length)
     } catch (problem) {
       setError(problem.message)
+      await load()
     } finally {
       setBusy(false)
     }
@@ -229,6 +296,7 @@ export function StoragePage(props) {
         busy,
         onTest: id => act(async () => { await request(`/providers/${indexOf(id)}/test`, { method: 'POST' }) }),
         onPrimary: id => act(async () => { await request(`/providers/${indexOf(id)}/primary`, { method: 'POST' }) }),
+        onEdit: id => { setEditingId(id); setAdding(false) },
         onRemove: id => act(async () => {
           if (typeof window !== 'undefined' && typeof window.confirm === 'function' && !window.confirm(t('confirmRemove'))) return
           await request(`/providers/${indexOf(id)}`, { method: 'DELETE' })
@@ -236,8 +304,25 @@ export function StoragePage(props) {
       }, provider.id)) }),
     ] }),
     adding
-      ? jsx(AddForm, { types, t, onCancel: () => setAdding(false), onSaved: async () => { setAdding(false); await load() } })
-      : jsx('button', { style: styles.button, disabled: busy || loading, onClick: () => setAdding(true), children: t('add') }),
+      ? jsx(EntryForm, {
+        types,
+        t,
+        first: providers.length === 0,
+        onCancel: () => setAdding(false),
+        onSaved: async () => { setAdding(false); await reloadAfterWrite(providers.length + 1) },
+      })
+      : editingId === null
+        ? jsx('button', { style: styles.button, disabled: busy || loading, onClick: () => setAdding(true), children: t('add') })
+        : jsx(EntryForm, {
+          types,
+          t,
+          initial: (() => {
+            const provider = providers.find(item => item.id === editingId)
+            return provider === undefined ? undefined : { ...provider, index: providers.indexOf(provider) }
+          })(),
+          onCancel: () => setEditingId(null),
+          onSaved: async () => { setEditingId(null); await reloadAfterWrite(providers.length) },
+        }),
     jsx('p', { style: styles.note, children: 'API: /__fs' }),
   ] })
 }

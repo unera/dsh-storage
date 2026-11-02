@@ -41,6 +41,11 @@ var DICTIONARIES = {
     "empty": "No storages yet. Add one below.",
     "loading": "Loading\u2026",
     "add": "Add storage",
+    "edit": "Edit",
+    "editTitle": "Edit storage",
+    "enabledLabel": "enabled",
+    "readOnlyLabel": "read-only",
+    "secretKeep": "leave empty to keep the current secret",
     "type": "Type",
     "label": "Name",
     "labelPlaceholder": "My files",
@@ -76,6 +81,11 @@ var DICTIONARIES = {
     "empty": "\u0425\u0440\u0430\u043D\u0438\u043B\u0438\u0449 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442. \u0414\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u043D\u0438\u0436\u0435.",
     "loading": "\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u044E\u2026",
     "add": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435",
+    "edit": "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C",
+    "editTitle": "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435",
+    "enabledLabel": "\u0432\u043A\u043B\u044E\u0447\u0435\u043D\u043E",
+    "readOnlyLabel": "\u0442\u043E\u043B\u044C\u043A\u043E \u0447\u0442\u0435\u043D\u0438\u0435",
+    "secretKeep": "\u043E\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u043F\u0443\u0441\u0442\u044B\u043C, \u0447\u0442\u043E\u0431\u044B \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u0441\u0435\u043A\u0440\u0435\u0442",
     "type": "\u0422\u0438\u043F",
     "label": "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435",
     "labelPlaceholder": "\u041C\u043E\u0438 \u0444\u0430\u0439\u043B\u044B",
@@ -110,6 +120,11 @@ var DICTIONARIES = {
 // client/index.jsx
 var SECTION_ID = "storage";
 var API = "/__fs";
+var TYPE_LABELS = {
+  local: "\u041A\u0430\u0442\u0430\u043B\u043E\u0433 \u043D\u0430 \u044D\u0442\u043E\u043C \u0445\u043E\u0441\u0442\u0435",
+  s3: "S3-\u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439",
+  webdav: "WebDAV"
+};
 var styles = {
   intro: { opacity: 0.75, margin: "0 0 16px", lineHeight: 1.5 },
   table: { width: "100%", borderCollapse: "collapse", marginBottom: 16 },
@@ -149,14 +164,17 @@ function bytes(value) {
   }
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
-function StorageRow({ provider, t, onTest, onPrimary, onRemove, busy }) {
+function StorageRow({ provider, t, onTest, onPrimary, onRemove, onEdit, busy }) {
   const stateTone = provider.status?.state === "ok" ? styles.ok : provider.status?.state === "unknown" ? {} : styles.bad;
   const free = bytes(provider.status?.freeBytes);
   return (0, import_jsx_runtime.jsx)("tr", {
     children: [
       (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: [
         (0, import_jsx_runtime.jsx)("strong", { children: provider.label }),
-        (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: `${provider.type} \xB7 ${provider.id}${provider.basePath === "" ? "" : ` \xB7 ${provider.basePath}`}` })
+        (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: `${TYPE_LABELS[provider.type] ?? provider.type} \xB7 ${provider.id}${provider.basePath === "" ? "" : ` \xB7 ${provider.basePath}`}` }),
+        provider.options?.root === void 0 ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: provider.options.root }),
+        provider.options?.baseUrl === void 0 ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: provider.options.baseUrl }),
+        provider.options?.bucket === void 0 ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: `${provider.options.bucket}${provider.options.endpoint === void 0 ? "" : ` \xB7 ${provider.options.endpoint}`}` })
       ] }),
       (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: [
         (0, import_jsx_runtime.jsx)("span", { style: { ...styles.badge, ...stateTone }, children: provider.status?.state ?? "unknown" }),
@@ -168,6 +186,7 @@ function StorageRow({ provider, t, onTest, onPrimary, onRemove, busy }) {
         (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: free === null ? t("unknownFree") : `${t("free")}: ${free}` })
       ] }),
       (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: [
+        (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: () => onEdit(provider.id), children: t("edit") }),
         (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: () => onTest(provider.id), children: t("test") }),
         provider.role === "primary" ? null : (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: () => onPrimary(provider.id), children: t("makePrimary") }),
         (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: () => onRemove(provider.id), children: t("remove") })
@@ -175,34 +194,43 @@ function StorageRow({ provider, t, onTest, onPrimary, onRemove, busy }) {
     ]
   });
 }
-function AddForm({ types, t, onCancel, onSaved }) {
-  const [type, setType] = (0, import_react.useState)(types[0] ?? "local");
-  const [label, setLabel] = (0, import_react.useState)("");
-  const [basePath, setBasePath] = (0, import_react.useState)("");
-  const [root, setRoot] = (0, import_react.useState)("");
-  const [bucket, setBucket] = (0, import_react.useState)("");
-  const [region, setRegion] = (0, import_react.useState)("");
-  const [endpoint, setEndpoint] = (0, import_react.useState)("");
+function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
+  const editing = initial !== void 0;
+  const [type, setType] = (0, import_react.useState)(initial?.type ?? types[0] ?? "local");
+  const [label, setLabel] = (0, import_react.useState)(initial?.label ?? "");
+  const [basePath, setBasePath] = (0, import_react.useState)(initial?.basePath ?? "");
+  const [root, setRoot] = (0, import_react.useState)(initial?.options?.root ?? "");
+  const [bucket, setBucket] = (0, import_react.useState)(initial?.options?.bucket ?? "");
+  const [region, setRegion] = (0, import_react.useState)(initial?.options?.region ?? "");
+  const [endpoint, setEndpoint] = (0, import_react.useState)(initial?.options?.endpoint ?? "");
+  const [baseUrl, setBaseUrl] = (0, import_react.useState)(initial?.options?.baseUrl ?? "");
   const [secret, setSecret] = (0, import_react.useState)("");
-  const [primary, setPrimary] = (0, import_react.useState)(false);
+  const [enabled, setEnabled] = (0, import_react.useState)(initial?.enabled !== false);
+  const [readOnly, setReadOnly] = (0, import_react.useState)(initial?.readOnly === true);
+  const autoPrimary = first === true;
+  const [primary, setPrimary] = (0, import_react.useState)(initial?.role === "primary" || first === true);
   const [error, setError] = (0, import_react.useState)(null);
   const [busy, setBusy] = (0, import_react.useState)(false);
+  const optionsFor = () => {
+    if (type === "local") return { root: root.trim() };
+    if (type === "webdav") return { baseUrl: baseUrl.trim() };
+    return { bucket: bucket.trim(), ...region.trim() === "" ? {} : { region: region.trim() }, ...endpoint.trim() === "" ? {} : { endpoint: endpoint.trim() } };
+  };
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      const options = type === "local" ? { root: root.trim() } : { bucket: bucket.trim(), ...region.trim() === "" ? {} : { region: region.trim() }, ...endpoint.trim() === "" ? {} : { endpoint: endpoint.trim() } };
-      await request("/providers", {
-        method: "POST",
-        body: {
-          type,
-          label: label.trim() === "" ? void 0 : label.trim(),
-          basePath: basePath.trim(),
-          role: primary ? "primary" : "secondary",
-          options,
-          ...secret.trim() === "" ? {} : { secret: secret.trim() }
-        }
-      });
+      const payload = {
+        label: label.trim(),
+        basePath: basePath.trim(),
+        role: primary || autoPrimary ? "primary" : "secondary",
+        enabled,
+        readOnly,
+        options: optionsFor(),
+        ...secret.trim() === "" ? {} : { secret: secret.trim() }
+      };
+      if (editing) await request(`/providers/${initial.index}`, { method: "PATCH", body: payload });
+      else await request("/providers", { method: "POST", body: { ...payload, type } });
       await onSaved();
     } catch (problem) {
       setError(problem.message);
@@ -214,7 +242,7 @@ function AddForm({ types, t, onCancel, onSaved }) {
     (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
       (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("type") }),
-        (0, import_jsx_runtime.jsx)("select", { style: styles.input, value: type, onChange: (event) => setType(event.target.value), children: types.map((item) => (0, import_jsx_runtime.jsx)("option", { value: item, children: item }, item)) })
+        (0, import_jsx_runtime.jsx)("select", { style: styles.input, value: type, disabled: editing, onChange: (event) => setType(event.target.value), children: types.map((item) => (0, import_jsx_runtime.jsx)("option", { value: item, children: TYPE_LABELS[item] ?? item }, item)) })
       ] }),
       (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("label") }),
@@ -231,6 +259,11 @@ function AddForm({ types, t, onCancel, onSaved }) {
         (0, import_jsx_runtime.jsx)("span", { children: t("root") }),
         (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: root, placeholder: "/srv/data", onChange: (event) => setRoot(event.target.value) }),
         (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("rootHint") })
+      ] })
+    ] }) : type === "webdav" ? (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
+      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+        (0, import_jsx_runtime.jsx)("span", { children: "baseUrl" }),
+        (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: baseUrl, placeholder: "https://cloud.example/remote.php/dav/files/user", onChange: (event) => setBaseUrl(event.target.value) })
       ] })
     ] }) : (0, import_jsx_runtime.jsxs)("div", { children: [
       (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
@@ -251,14 +284,22 @@ function AddForm({ types, t, onCancel, onSaved }) {
       (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("secret") }),
         (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 60 }, value: secret, onChange: (event) => setSecret(event.target.value) }),
-        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("secretHint") })
+        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: editing ? t("secretKeep") : t("secretHint") })
       ] })
     ] }),
     error === null ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.error, children: error }),
     (0, import_jsx_runtime.jsx)("div", { style: { marginTop: 10 }, children: [
       (0, import_jsx_runtime.jsx)("label", { style: { marginRight: 12 }, children: [
-        (0, import_jsx_runtime.jsx)("input", { type: "checkbox", checked: primary, onChange: (event) => setPrimary(event.target.checked) }),
+        (0, import_jsx_runtime.jsx)("input", { type: "checkbox", checked: primary || autoPrimary, disabled: autoPrimary, onChange: (event) => setPrimary(event.target.checked) }),
         ` ${t("primary")}`
+      ] }),
+      (0, import_jsx_runtime.jsx)("label", { style: { marginRight: 12 }, children: [
+        (0, import_jsx_runtime.jsx)("input", { type: "checkbox", checked: enabled, onChange: (event) => setEnabled(event.target.checked) }),
+        ` ${t("enabledLabel")}`
+      ] }),
+      (0, import_jsx_runtime.jsx)("label", { style: { marginRight: 12 }, children: [
+        (0, import_jsx_runtime.jsx)("input", { type: "checkbox", checked: readOnly, onChange: (event) => setReadOnly(event.target.checked) }),
+        ` ${t("readOnlyLabel")}`
       ] }),
       (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: submit, children: t("save") }),
       (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: onCancel, children: t("cancel") })
@@ -273,16 +314,32 @@ function StoragePage(props) {
   const [busy, setBusy] = (0, import_react.useState)(false);
   const [error, setError] = (0, import_react.useState)(null);
   const [adding, setAdding] = (0, import_react.useState)(false);
+  const [editingId, setEditingId] = (0, import_react.useState)(null);
+  const fetchOnce = async () => {
+    const body = await request("/providers");
+    const next = Array.isArray(body.providers) ? body.providers : [];
+    if (Array.isArray(body.types) && body.types.length > 0) setTypes(body.types);
+    setProviders(next);
+    return next;
+  };
   const load = async () => {
     setError(null);
     try {
-      const body = await request("/providers");
-      setProviders(Array.isArray(body.providers) ? body.providers : []);
-      if (Array.isArray(body.types) && body.types.length > 0) setTypes(body.types);
+      await fetchOnce();
     } catch (problem) {
       setError(problem.message);
     } finally {
       setLoading(false);
+    }
+  };
+  const reloadAfterWrite = async (expectedAtLeast) => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      try {
+        const next = await fetchOnce();
+        if (next.length >= expectedAtLeast) return;
+      } catch {
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
     }
   };
   (0, import_react.useEffect)(() => {
@@ -293,9 +350,10 @@ function StoragePage(props) {
     setError(null);
     try {
       await run();
-      await load();
+      await reloadAfterWrite(providers.length);
     } catch (problem) {
       setError(problem.message);
+      await load();
     } finally {
       setBusy(false);
     }
@@ -323,16 +381,38 @@ function StoragePage(props) {
         onPrimary: (id) => act(async () => {
           await request(`/providers/${indexOf(id)}/primary`, { method: "POST" });
         }),
+        onEdit: (id) => {
+          setEditingId(id);
+          setAdding(false);
+        },
         onRemove: (id) => act(async () => {
           if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(t("confirmRemove"))) return;
           await request(`/providers/${indexOf(id)}`, { method: "DELETE" });
         })
       }, provider.id)) })
     ] }),
-    adding ? (0, import_jsx_runtime.jsx)(AddForm, { types, t, onCancel: () => setAdding(false), onSaved: async () => {
-      setAdding(false);
-      await load();
-    } }) : (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy || loading, onClick: () => setAdding(true), children: t("add") }),
+    adding ? (0, import_jsx_runtime.jsx)(EntryForm, {
+      types,
+      t,
+      first: providers.length === 0,
+      onCancel: () => setAdding(false),
+      onSaved: async () => {
+        setAdding(false);
+        await reloadAfterWrite(providers.length + 1);
+      }
+    }) : editingId === null ? (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy || loading, onClick: () => setAdding(true), children: t("add") }) : (0, import_jsx_runtime.jsx)(EntryForm, {
+      types,
+      t,
+      initial: (() => {
+        const provider = providers.find((item) => item.id === editingId);
+        return provider === void 0 ? void 0 : { ...provider, index: providers.indexOf(provider) };
+      })(),
+      onCancel: () => setEditingId(null),
+      onSaved: async () => {
+        setEditingId(null);
+        await reloadAfterWrite(providers.length);
+      }
+    }),
     (0, import_jsx_runtime.jsx)("p", { style: styles.note, children: "API: /__fs" })
   ] });
 }

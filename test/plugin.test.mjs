@@ -179,3 +179,21 @@ test('every tool declares a name, a description and an output schema', () => {
     assert.notEqual(tool.output, undefined, tool.name)
   }
 })
+
+test('every tool has a render, or the call fails before the model sees data', () => {
+  const tools = createStorageTools({ entries: () => [], status: () => ({}), driver: () => ({}) })
+  for (const tool of tools) {
+    assert.equal(typeof tool.output?.render, 'function', `${tool.name} needs output.render`)
+  }
+})
+
+test('renderers produce one text block and never throw on an empty result', () => {
+  const tools = createStorageTools({ entries: () => [], status: () => ({}), driver: () => ({}) })
+  const byName = new Map(tools.map(tool => [tool.name, tool]))
+  const list = byName.get('storage_list').output.render({}, { storages: [] })
+  assert.equal(list[0].type, 'text')
+  assert.match(list[0].text, /Хранилищ нет/)
+  const df = byName.get('storage_df').output.render({}, { storage: 'st-0001' })
+  assert.equal(df[0].type, 'text')
+  assert.match(df[0].text, /неизвестно/)
+})

@@ -555,7 +555,48 @@ export const PROMPT_TEXT = [
   'A storage marked primary is used when a call names no id. No tool takes or returns a secret.',
 ].join(' ')
 
-/** Create the six storage tools bound to one service instance. */
+/** Human-readable size, for tool text. */
+export function humanBytes(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '?'
+  const units = ['Б', 'КиБ', 'МиБ', 'ГиБ', 'ТиБ']
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
+}
+
+/**
+ * One line of text per tool result. `dsh-tools` calls `output.render` for every
+ * result, so a tool that declares only a schema fails at call time with
+ * `output.render failed: userRender is not a function` — the model never sees data.
+ */
+export const RENDERERS = {
+  storage_list: (_args, value) => {
+    if (value.storages.length === 0) return [{ type: 'text', text: 'Хранилищ нет.' }]
+    const lines = value.storages.map(item => `- ${item.label} (${item.id}, ${item.type}${item.role === 'primary' ? ', основное' : ''}): ${item.state}`)
+    return [{ type: 'text', text: `Хранилища:\n${lines.join('\n')}` }]
+  },
+  storage_ls: (args, value) => {
+    const where = args.prefix === undefined || args.prefix === '' ? 'корне' : args.prefix
+    const names = value.items.slice(0, 20).map(item => item.key).join('\n')
+    return [{ type: 'text', text: `${value.storage}: ${value.items.length} объект(ов) в ${where}${value.truncated === true ? ' (список обрезан)' : ''}${value.items.length === 0 ? '' : `\n${names}`}` }]
+  },
+  storage_read: (_args, value) => [{ type: 'text', text: `${value.storage}: ${value.key}, ${humanBytes(value.size)}${value.truncated === true ? ', прочитано начало' : ''}` }],
+  storage_write: (_args, value) => [{ type: 'text', text: `Записано ${value.key} в ${value.storage}, ${humanBytes(value.size)}${value.sha256 === undefined ? '' : `, sha256 ${value.sha256.slice(0, 12)}…`}` }],
+  storage_mkdir: (_args, value) => [{ type: 'text', text: `Создан каталог ${value.key} в ${value.storage} (${value.medium === 'marker' ? 'маркер, у носителя нет каталогов' : 'настоящий каталог'})` }],
+  storage_df: (_args, value) => [{
+    type: 'text',
+    text: value.freeBytes === undefined
+      ? `${value.storage}: свободное место неизвестно`
+      : `${value.storage}: свободно ${humanBytes(value.freeBytes)}${value.totalBytes === undefined ? '' : ` из ${humanBytes(value.totalBytes)}`}`,
+  }],
+  storage_delete: (_args, value) => [{ type: 'text', text: value.deleted ? `Удалено ${value.key} из ${value.storage}` : `${value.key} не найдено в ${value.storage}` }],
+}
+
+/** Create the storage tools bound to one service instance. */
 export function createStorageTools(filestore) {
   const entryId = { type: 'string', description: 'Storage id; the primary storage is used when omitted.' }
   const key = { type: 'string', description: 'Key inside the storage, POSIX style, no leading slash.' }
@@ -585,7 +626,7 @@ export function createStorageTools(filestore) {
       },
     },
   }
-  return [
+  const tools = [
     defineTool({
       name: 'storage_list',
       description: 'List the configured remote storages with id, label, type, role and last known state. Call this before reading or writing so you know which storage to use.',
@@ -776,6 +817,7 @@ export function createStorageTools(filestore) {
       },
     }),
   ]
+  return tools.map(tool => ({ ...tool, output: { ...tool.output, render: RENDERERS[tool.name] } }))
 }
 
 /** JSON reply helper for the admin API. */
