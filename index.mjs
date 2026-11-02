@@ -532,7 +532,9 @@ export class Filestore extends Service {
 /** Map an error code onto a reported state. */
 export function stateFor(code) {
   switch (code) {
-    case 'FILESTORE_UNAUTHORIZED': return 'unauthorized'
+    case 'FILESTORE_UNAUTHORIZED':
+    case 'FILESTORE_CREDENTIAL_MISSING':
+    case 'FILESTORE_CREDENTIAL_INVALID': return 'unauthorized'
     case 'FILESTORE_NOT_FOUND': return 'not-found'
     case 'FILESTORE_QUOTA': return 'quota'
     case 'FILESTORE_UNSUPPORTED': return 'error'
