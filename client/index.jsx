@@ -223,7 +223,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   // Always clickable: a dead button cannot explain itself, and a click that says
   // "fill the application id first" teaches more than a grey rectangle.
   const deviceReady = true
-  const deviceBlockedReason = clientId.trim() === '' ? t('clientIdHint') : ''
+  const deviceBlockedReason = clientId.trim() === '' ? t('clientIdNeeded') : ''
 
   /**
    * Device flow: ask the host for a user code, show it, then poll the host until
@@ -233,7 +233,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const startDevice = async () => {
     setError(null)
     if (clientId.trim() === '') {
-      setError(t('clientIdHint'))
+      setError(t('clientIdNeeded'))
       return
     }
     try {
