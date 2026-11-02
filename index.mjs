@@ -848,9 +848,20 @@ export const OAUTH_PROVIDERS = {
     label: 'Яндекс.Диск',
     authorizeUrl: 'https://oauth.yandex.ru/authorize',
     tokenUrl: 'https://oauth.yandex.ru/token',
+    deviceCodeUrl: 'https://oauth.yandex.ru/device/code',
+    verificationUrl: 'https://oauth.yandex.ru/device',
     scope: 'cloud_api:disk.read cloud_api:disk.write',
   },
 }
+
+/**
+ * Transport for the OAuth calls, replaceable so tests never reach the network.
+ * A live handshake talks to the provider from the host, not from the browser.
+ */
+export const oauthTransport = { fetch: (...args) => fetch(...args) }
+
+/** Started device handshakes, keyed by the state we handed to the browser. */
+export const deviceStates = new Map()
 
 /** Live OAuth handshakes, keyed by state; short-lived and single-use. */
 export const oauthStates = new Map()
@@ -1003,6 +1014,91 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
           response.end('<!doctype html><meta charset="utf-8"><title>Готово</title><p>Хранилище подключено. Закройте окно и вернитесь в настройки.</p>')
           return undefined
+        }
+
+        // Device flow, step one: ask the provider for a short user code.
+        if (request.method === 'POST' && parts[2] === 'auth' && parts[3] === 'device' && parts[4] === 'start') {
+          const descriptor = OAUTH_PROVIDERS[current.type]
+          if (descriptor?.deviceCodeUrl === undefined) return json(response, 400, { error: `тип ${current.type} не умеет вход по коду`, code: 'FILESTORE_NO_DEVICE_FLOW' })
+          const clientId = current.options?.clientId
+          if (typeof clientId !== 'string' || clientId.trim() === '') {
+            return json(response, 400, { error: 'нужен client_id приложения', code: 'FILESTORE_NO_CLIENT_ID' })
+          }
+          const form = new URLSearchParams({ client_id: clientId.trim() })
+          if (typeof descriptor.scope === 'string') form.set('scope', descriptor.scope)
+          const answer = await oauthTransport.fetch(descriptor.deviceCodeUrl, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: form,
+          })
+          const body = await answer.json().catch(() => ({}))
+          if (!answer.ok || typeof body.device_code !== 'string') {
+            return json(response, 400, {
+              error: body?.error_description ?? 'провайдер не выдал код устройства',
+              code: 'FILESTORE_DEVICE_FLOW_FAILED',
+            })
+          }
+          const state = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+          const interval = Number(body.interval ?? 5)
+          const expiresIn = Number(body.expires_in ?? 300)
+          deviceStates.set(state, {
+            entryId: current.id,
+            credentialRef: current.credentialRef,
+            clientId: clientId.trim(),
+            tokenUrl: descriptor.tokenUrl,
+            deviceCode: body.device_code,
+            intervalMs: Math.max(1000, interval * 1000),
+            expiresAt: Date.now() + Math.max(30, expiresIn) * 1000,
+            // Counted from the handshake itself: the first poll must also respect
+            // the provider's interval, or it answers with a rate-limit error.
+            lastPollAt: Date.now(),
+          })
+          return json(response, 200, {
+            state,
+            userCode: body.user_code,
+            verificationUrl: body.verification_url ?? descriptor.verificationUrl,
+            interval,
+            expiresIn,
+          })
+        }
+
+        // Device flow, step two: the browser asks us whether the user confirmed yet.
+        if (request.method === 'POST' && parts[2] === 'auth' && parts[3] === 'device' && parts[4] === 'poll') {
+          const body = await readBody(request)
+          const state = String(body?.state ?? '')
+          const record = deviceStates.get(state)
+          if (record === undefined) return json(response, 200, { status: 'expired' })
+          if (Date.now() > record.expiresAt) {
+            deviceStates.delete(state)
+            return json(response, 200, { status: 'expired' })
+          }
+          // Never poll the provider faster than it asked us to.
+          if (Date.now() - record.lastPollAt < record.intervalMs) return json(response, 200, { status: 'pending' })
+          record.lastPollAt = Date.now()
+          const form = new URLSearchParams({ grant_type: 'device_code', code: record.deviceCode, client_id: record.clientId })
+          const store = credentialsOf()
+          if (typeof store?.resolve === 'function') {
+            const secret = await store.resolve(makeCredentialRef(`${record.entryId}-client`)).catch(() => undefined)
+            const value = secret?.value ?? (typeof secret === 'string' ? secret : undefined)
+            if (typeof value === 'string' && value !== '') form.set('client_secret', value)
+          }
+          const answer = await oauthTransport.fetch(record.tokenUrl, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: form,
+          })
+          const answerBody = await answer.json().catch(() => ({}))
+          if (answerBody?.error === 'authorization_pending') return json(response, 200, { status: 'pending' })
+          if (!answer.ok || typeof answerBody.access_token !== 'string') {
+            deviceStates.delete(state)
+            return json(response, 200, {
+              status: 'error',
+              error: answerBody?.error_description ?? answerBody?.error ?? 'провайдер не выдал токен',
+            })
+          }
+          if (typeof store?.set === 'function') await store.set(record.credentialRef, answerBody.access_token)
+          deviceStates.delete(state)
+          return json(response, 200, { status: 'ok' })
         }
 
         // Manual path: a token pasted by hand, for anyone who cannot run the redirect.

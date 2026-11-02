@@ -58,6 +58,11 @@ var DICTIONARIES = {
     "clientId": "Application id",
     "clientIdHint": "From the app registered at oauth.yandex.ru",
     "token": "OAuth token",
+    "deviceConnect": "Connect with a code",
+    "deviceCode": "Code",
+    "deviceOpen": "Open and enter it:",
+    "deviceWaiting": "Waiting for confirmation\u2026",
+    "deviceDone": "Connected. The token is stored on the host.",
     "type": "Type",
     "label": "Name",
     "labelPlaceholder": "My files",
@@ -110,6 +115,11 @@ var DICTIONARIES = {
     "clientId": "\u0418\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F",
     "clientIdHint": "\u0418\u0437 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F, \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u043E\u0433\u043E \u043D\u0430 oauth.yandex.ru",
     "token": "OAuth-\u0442\u043E\u043A\u0435\u043D",
+    "deviceConnect": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u043F\u043E \u043A\u043E\u0434\u0443",
+    "deviceCode": "\u041A\u043E\u0434",
+    "deviceOpen": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0438 \u0432\u0432\u0435\u0434\u0438\u0442\u0435:",
+    "deviceWaiting": "\u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F\u2026",
+    "deviceDone": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u043E. \u0422\u043E\u043A\u0435\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D \u043D\u0430 \u0445\u043E\u0441\u0442\u0435.",
     "type": "\u0422\u0438\u043F",
     "label": "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435",
     "labelPlaceholder": "\u041C\u043E\u0438 \u0444\u0430\u0439\u043B\u044B",
@@ -304,6 +314,8 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const [password, setPassword] = (0, import_react.useState)("");
   const [clientId, setClientId] = (0, import_react.useState)(initial?.options?.clientId ?? "");
   const [token, setToken] = (0, import_react.useState)("");
+  const [device, setDevice] = (0, import_react.useState)(null);
+  const [deviceState, setDeviceState] = (0, import_react.useState)(null);
   const [secret, setSecret] = (0, import_react.useState)("");
   const [enabled, setEnabled] = (0, import_react.useState)(initial?.enabled !== false);
   const [readOnly, setReadOnly] = (0, import_react.useState)(initial?.readOnly === true);
@@ -324,6 +336,40 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
     }
     if (type === "yadisk") return token.trim() === "" ? void 0 : token.trim();
     return secret.trim() === "" ? void 0 : secret.trim();
+  };
+  const startDevice = async () => {
+    setError(null);
+    try {
+      const started = await request(`/providers/${editing ? initial.index : 0}/auth/device/start`, { method: "POST", body: {} });
+      setDeviceState(started.state);
+      setDevice({ userCode: started.userCode, verificationUrl: started.verificationUrl, status: "waiting" });
+      const intervalMs = Math.max(1e3, Number(started.interval ?? 5) * 1e3);
+      const deadline = Date.now() + Math.max(30, Number(started.expiresIn ?? 300)) * 1e3;
+      const poll = async () => {
+        if (Date.now() > deadline) {
+          setDevice((current) => current === null ? null : { ...current, status: "error", error: "\u043A\u043E\u0434 \u0438\u0441\u0442\u0451\u043A" });
+          return;
+        }
+        try {
+          const answer = await request(`/providers/${editing ? initial.index : 0}/auth/device/poll`, { method: "POST", body: { state: started.state } });
+          if (answer.status === "ok") {
+            setDevice((current) => current === null ? null : { ...current, status: "ok" });
+            setToken("");
+            return;
+          }
+          if (answer.status === "pending") {
+            setTimeout(poll, intervalMs);
+            return;
+          }
+          setDevice((current) => current === null ? null : { ...current, status: "error", error: answer.error ?? answer.status });
+        } catch (problem) {
+          setDevice((current) => current === null ? null : { ...current, status: "error", error: problem.message });
+        }
+      };
+      setTimeout(poll, intervalMs);
+    } catch (problem) {
+      setError(problem.message);
+    }
   };
   const submit = async () => {
     setBusy(true);
@@ -393,6 +439,20 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
           (0, import_jsx_runtime.jsx)("span", { children: t("clientId") }),
           (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: clientId, placeholder: "\u0438\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F", onChange: (event) => setClientId(event.target.value) }),
           (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("clientIdHint") })
+        ] })
+      ] }),
+      (0, import_jsx_runtime.jsx)("div", { style: { margin: "4px 0 12px" }, children: [
+        (0, import_jsx_runtime.jsx)("button", {
+          style: styles.button,
+          disabled: busy || clientId.trim() === "" || device?.status === "waiting",
+          title: clientId.trim() === "" ? t("clientIdHint") : t("deviceConnect"),
+          onClick: startDevice,
+          children: t("deviceConnect")
+        }),
+        device === null ? null : (0, import_jsx_runtime.jsx)("div", { style: { marginTop: 8 }, children: [
+          (0, import_jsx_runtime.jsx)("div", { children: [t("deviceCode"), ": ", (0, import_jsx_runtime.jsx)("strong", { style: { fontSize: 18, letterSpacing: 2 }, children: device.userCode })] }),
+          (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: [t("deviceOpen"), " ", (0, import_jsx_runtime.jsx)("a", { href: device.verificationUrl, target: "_blank", rel: "noreferrer", children: device.verificationUrl })] }),
+          (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: device.status === "ok" ? t("deviceDone") : device.status === "error" ? `${t("failed")}: ${device.error}` : t("deviceWaiting") })
         ] })
       ] }),
       (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
@@ -578,8 +638,7 @@ function StoragePage(props) {
           await request(`/providers/${indexOf(id)}`, { method: "DELETE" });
         })
       }, provider.id)) })
-    ] }),
-    (0, import_jsx_runtime.jsx)("p", { style: styles.note, children: "API: /__fs" })
+    ] })
   ] });
 }
 function apply(ctx) {

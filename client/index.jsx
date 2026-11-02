@@ -181,6 +181,8 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const [password, setPassword] = useState('')
   const [clientId, setClientId] = useState(initial?.options?.clientId ?? '')
   const [token, setToken] = useState('')
+  const [device, setDevice] = useState(null)
+  const [deviceState, setDeviceState] = useState(null)
   const [secret, setSecret] = useState('')
   const [enabled, setEnabled] = useState(initial?.enabled !== false)
   const [readOnly, setReadOnly] = useState(initial?.readOnly === true)
@@ -209,6 +211,46 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
     }
     if (type === 'yadisk') return token.trim() === '' ? undefined : token.trim()
     return secret.trim() === '' ? undefined : secret.trim()
+  }
+
+  /**
+   * Device flow: ask the host for a user code, show it, then poll the host until
+   * the provider says the code was confirmed. The token never passes through the
+   * page — it goes straight into the credential store on the host.
+   */
+  const startDevice = async () => {
+    setError(null)
+    try {
+      const started = await request(`/providers/${editing ? initial.index : 0}/auth/device/start`, { method: 'POST', body: {} })
+      setDeviceState(started.state)
+      setDevice({ userCode: started.userCode, verificationUrl: started.verificationUrl, status: 'waiting' })
+      const intervalMs = Math.max(1000, Number(started.interval ?? 5) * 1000)
+      const deadline = Date.now() + Math.max(30, Number(started.expiresIn ?? 300)) * 1000
+      const poll = async () => {
+        if (Date.now() > deadline) {
+          setDevice(current => current === null ? null : { ...current, status: 'error', error: 'код истёк' })
+          return
+        }
+        try {
+          const answer = await request(`/providers/${editing ? initial.index : 0}/auth/device/poll`, { method: 'POST', body: { state: started.state } })
+          if (answer.status === 'ok') {
+            setDevice(current => current === null ? null : { ...current, status: 'ok' })
+            setToken('')
+            return
+          }
+          if (answer.status === 'pending') {
+            setTimeout(poll, intervalMs)
+            return
+          }
+          setDevice(current => current === null ? null : { ...current, status: 'error', error: answer.error ?? answer.status })
+        } catch (problem) {
+          setDevice(current => current === null ? null : { ...current, status: 'error', error: problem.message })
+        }
+      }
+      setTimeout(poll, intervalMs)
+    } catch (problem) {
+      setError(problem.message)
+    }
   }
 
   const submit = async () => {
@@ -285,6 +327,20 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
             jsx('span', { children: t('clientId') }),
             jsx('input', { style: styles.input, value: clientId, placeholder: 'идентификатор приложения', onChange: event => setClientId(event.target.value) }),
             jsx('span', { style: styles.hint, children: t('clientIdHint') }),
+          ] }),
+        ] }),
+        jsx('div', { style: { margin: '4px 0 12px' }, children: [
+          jsx('button', {
+            style: styles.button,
+            disabled: busy || clientId.trim() === '' || device?.status === 'waiting',
+            title: clientId.trim() === '' ? t('clientIdHint') : t('deviceConnect'),
+            onClick: startDevice,
+            children: t('deviceConnect'),
+          }),
+          device === null ? null : jsx('div', { style: { marginTop: 8 }, children: [
+            jsx('div', { children: [t('deviceCode'), ': ', jsx('strong', { style: { fontSize: 18, letterSpacing: 2 }, children: device.userCode })] }),
+            jsx('div', { style: styles.hint, children: [t('deviceOpen'), ' ', jsx('a', { href: device.verificationUrl, target: '_blank', rel: 'noreferrer', children: device.verificationUrl })] }),
+            jsx('div', { style: styles.hint, children: device.status === 'ok' ? t('deviceDone') : device.status === 'error' ? `${t('failed')}: ${device.error}` : t('deviceWaiting') }),
           ] }),
         ] }),
         jsx('label', { style: styles.field, children: [
@@ -489,7 +545,6 @@ export function StoragePage(props) {
         }),
       }, provider.id)) }),
     ] }),
-    jsx('p', { style: styles.note, children: 'API: /__fs' }),
   ] })
 }
 
