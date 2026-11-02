@@ -347,11 +347,17 @@ export function StoragePage(props) {
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState(null)
 
-  const fetchOnce = async () => {
+  /** Read the list without painting it: a stale read must not roll the panel back. */
+  const peek = async () => {
     const body = await request('/providers')
     const next = Array.isArray(body.providers) ? body.providers : []
     if (Array.isArray(body.types) && body.types.length > 0) setTypes(body.types)
     if (body.capabilities !== undefined && body.capabilities !== null) setCapabilities(body.capabilities)
+    return next
+  }
+
+  const fetchOnce = async () => {
+    const next = await peek()
     setProviders(next)
     return next
   }
@@ -386,27 +392,30 @@ export function StoragePage(props) {
 
   useEffect(() => { load() }, [])
 
-  /** What the user can see: if this does not change, the panel is stale. */
-  const signature = list => JSON.stringify(list.map(item => [item.id, item.role, item.enabled, item.status?.state, item.status?.checkedAt]))
-
   /**
-   * Run a mutation, then keep reading until what the server reports differs from
-   * what was on screen before. Waiting for a length change was enough for "add",
-   * but a role or status change keeps the length, so the first read returned the
-   * old document and the panel showed one click behind.
+   * Run a mutation, then read repeatedly until the server reports the state the
+   * mutation was supposed to produce, and only then paint it. Painting every read
+   * is what made the star jump: an early read still carried the old document, the
+   * panel accepted it, and the switch appeared to undo itself before redoing.
    */
-  const act = async (run, optimistic) => {
-    const before = signature(providers)
+  const act = async (run, { optimistic, until } = {}) => {
     if (typeof optimistic === 'function') setProviders(previous => optimistic(previous))
     setBusy(true)
     setError(null)
     try {
       await run()
-      for (let attempt = 0; attempt < 25; attempt += 1) {
-        const next = await fetchOnce()
-        if (signature(next) !== before) return
+      let last
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        last = await peek()
+        if (until === undefined || until(last) === true) {
+          setProviders(last)
+          return
+        }
         await new Promise(resolve => setTimeout(resolve, 150))
       }
+      // Never leave the panel showing a guess: after the patience runs out, the
+      // server wins even if it disagrees with the optimistic paint.
+      if (last !== undefined) setProviders(last)
     } catch (problem) {
       setError(problem.message)
       await load()
@@ -458,11 +467,20 @@ export function StoragePage(props) {
         capabilities,
         t,
         busy,
-        onTest: id => act(async () => { await request(`/providers/${indexOf(id)}/test`, { method: 'POST' }) }),
+        onTest: id => {
+          const before = providers.find(item => item.id === id)?.status?.checkedAt ?? null
+          return act(
+            async () => { await request(`/providers/${indexOf(id)}/test`, { method: 'POST' }) },
+            { until: next => (next.find(item => item.id === id)?.status?.checkedAt ?? null) !== before },
+          )
+        },
         onPrimary: id => act(
           async () => { await request(`/providers/${indexOf(id)}/primary`, { method: 'POST' }) },
-          // Show the switch immediately; the loop above only confirms it.
-          previous => previous.map(item => ({ ...item, role: item.id === id ? 'primary' : 'secondary' })),
+          {
+            // Show the switch immediately; the loop only waits for confirmation.
+            optimistic: previous => previous.map(item => ({ ...item, role: item.id === id ? 'primary' : 'secondary' })),
+            until: next => next.find(item => item.id === id)?.role === 'primary',
+          },
         ),
         onEdit: id => { setEditingId(id); setAdding(false) },
         onRemove: id => act(async () => {

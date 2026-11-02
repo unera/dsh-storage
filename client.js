@@ -451,11 +451,15 @@ function StoragePage(props) {
   const [error, setError] = (0, import_react.useState)(null);
   const [adding, setAdding] = (0, import_react.useState)(false);
   const [editingId, setEditingId] = (0, import_react.useState)(null);
-  const fetchOnce = async () => {
+  const peek = async () => {
     const body = await request("/providers");
     const next = Array.isArray(body.providers) ? body.providers : [];
     if (Array.isArray(body.types) && body.types.length > 0) setTypes(body.types);
     if (body.capabilities !== void 0 && body.capabilities !== null) setCapabilities(body.capabilities);
+    return next;
+  };
+  const fetchOnce = async () => {
+    const next = await peek();
     setProviders(next);
     return next;
   };
@@ -482,19 +486,22 @@ function StoragePage(props) {
   (0, import_react.useEffect)(() => {
     load();
   }, []);
-  const signature = (list) => JSON.stringify(list.map((item) => [item.id, item.role, item.enabled, item.status?.state, item.status?.checkedAt]));
-  const act = async (run, optimistic) => {
-    const before = signature(providers);
+  const act = async (run, { optimistic, until } = {}) => {
     if (typeof optimistic === "function") setProviders((previous) => optimistic(previous));
     setBusy(true);
     setError(null);
     try {
       await run();
-      for (let attempt = 0; attempt < 25; attempt += 1) {
-        const next = await fetchOnce();
-        if (signature(next) !== before) return;
+      let last;
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        last = await peek();
+        if (until === void 0 || until(last) === true) {
+          setProviders(last);
+          return;
+        }
         await new Promise((resolve) => setTimeout(resolve, 150));
       }
+      if (last !== void 0) setProviders(last);
     } catch (problem) {
       setError(problem.message);
       await load();
@@ -543,15 +550,24 @@ function StoragePage(props) {
         capabilities,
         t,
         busy,
-        onTest: (id) => act(async () => {
-          await request(`/providers/${indexOf(id)}/test`, { method: "POST" });
-        }),
+        onTest: (id) => {
+          const before = providers.find((item) => item.id === id)?.status?.checkedAt ?? null;
+          return act(
+            async () => {
+              await request(`/providers/${indexOf(id)}/test`, { method: "POST" });
+            },
+            { until: (next) => (next.find((item) => item.id === id)?.status?.checkedAt ?? null) !== before }
+          );
+        },
         onPrimary: (id) => act(
           async () => {
             await request(`/providers/${indexOf(id)}/primary`, { method: "POST" });
           },
-          // Show the switch immediately; the loop above only confirms it.
-          (previous) => previous.map((item) => ({ ...item, role: item.id === id ? "primary" : "secondary" }))
+          {
+            // Show the switch immediately; the loop only waits for confirmation.
+            optimistic: (previous) => previous.map((item) => ({ ...item, role: item.id === id ? "primary" : "secondary" })),
+            until: (next) => next.find((item) => item.id === id)?.role === "primary"
+          }
         ),
         onEdit: (id) => {
           setEditingId(id);
