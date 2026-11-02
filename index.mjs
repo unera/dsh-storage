@@ -863,6 +863,17 @@ export const oauthTransport = { fetch: (...args) => fetch(...args) }
 /** Started device handshakes, keyed by the state we handed to the browser. */
 export const deviceStates = new Map()
 
+/**
+ * One line per OAuth step, to the process log. A handshake happens in a browser
+ * tab and a host loop, so without these lines the only evidence of what went
+ * wrong is a red word in the panel.
+ */
+function deviceLog(ctx, message) {
+  const line = `[dsh-storage] ${message}`
+  if (typeof ctx?.logger?.info === 'function') ctx.logger.info(line)
+  else console.warn(line)
+}
+
 /** Live OAuth handshakes, keyed by state; short-lived and single-use. */
 export const oauthStates = new Map()
 
@@ -906,7 +917,7 @@ async function readBody(request) {
  * @param credentialsOf - getter for the credentials service, which may mount late.
  * @returns an HTTP handler.
  */
-export function createFilestoreHandler(settings, filestore, credentialsOf = () => null) {
+export function createFilestoreHandler(settings, filestore, credentialsOf = () => null, ctx = undefined) {
   const read = () => {
     const descriptor = settings.describe().find(entry => String(entry.ns) === SETTINGS_NAMESPACE)
     const value = descriptor?.value
@@ -1017,6 +1028,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           expiresAt: Date.now() + Math.max(30, expiresIn) * 1000,
           lastPollAt: Date.now(),
         })
+        deviceLog(ctx, `device/start entry=${entryId} state=${state} userCode=${answerBody.user_code} interval=${interval}s`)
         return json(response, 200, {
           state,
           userCode: answerBody.user_code,
@@ -1050,15 +1062,20 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           body: form,
         })
         const answerBody = await answer.json().catch(() => ({}))
-        if (answerBody?.error === 'authorization_pending') return json(response, 200, { status: 'pending' })
+        if (answerBody?.error === 'authorization_pending') {
+          deviceLog(ctx, `device/poll state=${state} entry=${record.entryId} pending`)
+          return json(response, 200, { status: 'pending' })
+        }
         if (!answer.ok || typeof answerBody.access_token !== 'string') {
           deviceStates.delete(state)
+          deviceLog(ctx, `device/poll state=${state} entry=${record.entryId} failed: ${answerBody?.error ?? 'no token'} ${answerBody?.error_description ?? ''}`)
           return json(response, 200, {
             status: 'error',
             error: answerBody?.error_description ?? answerBody?.error ?? 'провайдер не выдал токен',
           })
         }
         if (typeof store?.set === 'function') await store.set(record.credentialRef, answerBody.access_token)
+        deviceLog(ctx, `device/poll state=${state} entry=${record.entryId} ok token stored`)
         deviceStates.delete(state)
         return json(response, 200, { status: 'ok' })
       }
@@ -1341,7 +1358,7 @@ export function apply(ctx, config = {}) {
     const settings = child.settings
     const server = child.webServer
     if (typeof settings?.update !== 'function' || typeof server?.register !== 'function') return undefined
-    const handler = createFilestoreHandler(settings, filestore, () => shared.credentials)
+    const handler = createFilestoreHandler(settings, filestore, () => shared.credentials, child)
     return child.effect(() => {
       const unregister = server.register({ kind: 'prefix', path: ROUTE_PREFIX, handler })
       return () => { try { unregister?.() } catch { /* already gone */ } }
