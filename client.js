@@ -52,6 +52,12 @@ var DICTIONARIES = {
     "hintDelete": "delete",
     "hintFree": "free space",
     "hintFreeUnknown": "the storage does not report free space",
+    "login": "Login",
+    "password": "Password",
+    "passwordHint": "App password is better than the account password",
+    "clientId": "Application id",
+    "clientIdHint": "From the app registered at oauth.yandex.ru",
+    "token": "OAuth token",
     "type": "Type",
     "label": "Name",
     "labelPlaceholder": "My files",
@@ -98,6 +104,12 @@ var DICTIONARIES = {
     "hintDelete": "\u0443\u0434\u0430\u043B\u0435\u043D\u0438\u0435",
     "hintFree": "\u0441\u0432\u043E\u0431\u043E\u0434\u043D\u043E\u0435 \u043C\u0435\u0441\u0442\u043E",
     "hintFreeUnknown": "\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u043D\u0435 \u0441\u043E\u043E\u0431\u0449\u0430\u0435\u0442 \u0441\u0432\u043E\u0431\u043E\u0434\u043D\u043E\u0435 \u043C\u0435\u0441\u0442\u043E",
+    "login": "\u041B\u043E\u0433\u0438\u043D",
+    "password": "\u041F\u0430\u0440\u043E\u043B\u044C",
+    "passwordHint": "\u041B\u0443\u0447\u0448\u0435 \u043F\u0430\u0440\u043E\u043B\u044C \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F, \u0447\u0435\u043C \u043F\u0430\u0440\u043E\u043B\u044C \u043E\u0442 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430",
+    "clientId": "\u0418\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F",
+    "clientIdHint": "\u0418\u0437 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F, \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u043E\u0433\u043E \u043D\u0430 oauth.yandex.ru",
+    "token": "OAuth-\u0442\u043E\u043A\u0435\u043D",
     "type": "\u0422\u0438\u043F",
     "label": "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435",
     "labelPlaceholder": "\u041C\u043E\u0438 \u0444\u0430\u0439\u043B\u044B",
@@ -161,7 +173,8 @@ var styles = {
   icon: { width: 16, height: 16, display: "block" },
   typeIcon: { width: 22, height: 22, marginRight: 8, flex: "0 0 auto" },
   nameCell: { display: "flex", alignItems: "flex-start", gap: 0 },
-  badges: { display: "flex", gap: 4, alignItems: "center", flexWrap: "nowrap" },
+  badges: { display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap", maxWidth: 190 },
+  buttonColumn: { display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" },
   // No `cursor: help`: a question-mark pointer on a small pill reads as a puzzle
   // rather than as a tooltip, and the hint appears on hover anyway.
   pill: { display: "inline-block", padding: "1px 7px", borderRadius: 10, fontSize: 12, whiteSpace: "nowrap" },
@@ -238,7 +251,7 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
         permission("D", caps.delete === true, t("hintDelete")),
         free === null ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("hintFreeUnknown"), children: "\u2014" }) : (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillFree, hint: t("hintFree"), children: free })
       ] }) }),
-      (0, import_jsx_runtime.jsx)("td", { style: { ...styles.td, whiteSpace: "nowrap" }, children: [
+      (0, import_jsx_runtime.jsx)("td", { style: { ...styles.td, whiteSpace: "nowrap", verticalAlign: "top" }, children: (0, import_jsx_runtime.jsx)("div", { style: styles.buttonColumn, children: [
         (0, import_jsx_runtime.jsx)(IconButton, {
           icon: "edit",
           title: t("edit"),
@@ -263,7 +276,7 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
           disabled: busy,
           onClick: () => onRemove(provider.id)
         })
-      ] })
+      ] }) })
     ]
   });
 }
@@ -277,6 +290,10 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const [region, setRegion] = (0, import_react.useState)(initial?.options?.region ?? "");
   const [endpoint, setEndpoint] = (0, import_react.useState)(initial?.options?.endpoint ?? "");
   const [baseUrl, setBaseUrl] = (0, import_react.useState)(initial?.options?.baseUrl ?? "");
+  const [username, setUsername] = (0, import_react.useState)("");
+  const [password, setPassword] = (0, import_react.useState)("");
+  const [clientId, setClientId] = (0, import_react.useState)(initial?.options?.clientId ?? "");
+  const [token, setToken] = (0, import_react.useState)("");
   const [secret, setSecret] = (0, import_react.useState)("");
   const [enabled, setEnabled] = (0, import_react.useState)(initial?.enabled !== false);
   const [readOnly, setReadOnly] = (0, import_react.useState)(initial?.readOnly === true);
@@ -287,7 +304,16 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const optionsFor = () => {
     if (type === "local") return { root: root.trim() };
     if (type === "webdav") return { baseUrl: baseUrl.trim() };
+    if (type === "yadisk") return { ...clientId.trim() === "" ? {} : { clientId: clientId.trim() } };
     return { bucket: bucket.trim(), ...region.trim() === "" ? {} : { region: region.trim() }, ...endpoint.trim() === "" ? {} : { endpoint: endpoint.trim() } };
+  };
+  const secretFor = () => {
+    if (type === "webdav") {
+      if (username.trim() === "" && password.trim() === "") return void 0;
+      return JSON.stringify({ username: username.trim(), password: password.trim() });
+    }
+    if (type === "yadisk") return token.trim() === "" ? void 0 : token.trim();
+    return secret.trim() === "" ? void 0 : secret.trim();
   };
   const submit = async () => {
     setBusy(true);
@@ -300,7 +326,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         enabled,
         readOnly,
         options: optionsFor(),
-        ...secret.trim() === "" ? {} : { secret: secret.trim() }
+        ...secretFor() === void 0 ? {} : { secret: secretFor() }
       };
       if (editing) await request(`/providers/${initial.index}`, { method: "PATCH", body: payload });
       else await request("/providers", { method: "POST", body: { ...payload, type } });
@@ -333,10 +359,36 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: root, placeholder: "/srv/data", onChange: (event) => setRoot(event.target.value) }),
         (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("rootHint") })
       ] })
-    ] }) : type === "webdav" ? (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
+    ] }) : type === "webdav" ? (0, import_jsx_runtime.jsxs)("div", { children: [
+      (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
+        (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+          (0, import_jsx_runtime.jsx)("span", { children: "baseUrl" }),
+          (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: baseUrl, placeholder: "https://cloud.example/remote.php/dav/files/user", onChange: (event) => setBaseUrl(event.target.value) })
+        ] })
+      ] }),
+      (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
+        (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+          (0, import_jsx_runtime.jsx)("span", { children: t("login") }),
+          (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: username, autoComplete: "off", onChange: (event) => setUsername(event.target.value) })
+        ] }),
+        (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+          (0, import_jsx_runtime.jsx)("span", { children: t("password") }),
+          (0, import_jsx_runtime.jsx)("input", { style: styles.input, type: "password", value: password, autoComplete: "new-password", onChange: (event) => setPassword(event.target.value) }),
+          (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: editing ? t("secretKeep") : t("passwordHint") })
+        ] })
+      ] })
+    ] }) : type === "yadisk" ? (0, import_jsx_runtime.jsxs)("div", { children: [
+      (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
+        (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+          (0, import_jsx_runtime.jsx)("span", { children: t("clientId") }),
+          (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: clientId, placeholder: "\u0438\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F", onChange: (event) => setClientId(event.target.value) }),
+          (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("clientIdHint") })
+        ] })
+      ] }),
       (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
-        (0, import_jsx_runtime.jsx)("span", { children: "baseUrl" }),
-        (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: baseUrl, placeholder: "https://cloud.example/remote.php/dav/files/user", onChange: (event) => setBaseUrl(event.target.value) })
+        (0, import_jsx_runtime.jsx)("span", { children: t("token") }),
+        (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 60 }, value: token, onChange: (event) => setToken(event.target.value) }),
+        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: editing ? t("secretKeep") : t("tokenHint") })
       ] })
     ] }) : (0, import_jsx_runtime.jsxs)("div", { children: [
       (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
@@ -434,10 +486,34 @@ function StoragePage(props) {
     }
   };
   const indexOf = (id) => providers.findIndex((provider) => provider.id === id);
+  const form = adding ? { key: "new" } : editingId === null ? null : (() => {
+    const provider = providers.find((item) => item.id === editingId);
+    return provider === void 0 ? null : { key: provider.id, initial: { ...provider, index: providers.indexOf(provider) } };
+  })();
   return (0, import_jsx_runtime.jsx)("div", { children: [
     (0, import_jsx_runtime.jsx)("p", { style: styles.intro, children: t("intro") }),
     loading ? (0, import_jsx_runtime.jsx)("p", { style: styles.hint, children: t("loading") }) : null,
     error === null ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.error, children: error }),
+    form === null ? (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy || loading, onClick: () => {
+      setAdding(true);
+      setEditingId(null);
+    }, children: t("add") }) : (0, import_jsx_runtime.jsx)(EntryForm, {
+      key: form.key,
+      types,
+      t,
+      first: providers.length === 0 && form.initial === void 0,
+      initial: form.initial,
+      onCancel: () => {
+        setAdding(false);
+        setEditingId(null);
+      },
+      onSaved: async () => {
+        const wasEditing = form.initial !== void 0;
+        setAdding(false);
+        setEditingId(null);
+        await reloadAfterWrite(wasEditing ? providers.length : providers.length + 1);
+      }
+    }),
     providers.length === 0 && !loading ? (0, import_jsx_runtime.jsx)("p", { style: styles.hint, children: t("empty") }) : null,
     providers.length === 0 ? null : (0, import_jsx_runtime.jsx)("table", { style: styles.table, children: [
       (0, import_jsx_runtime.jsx)("thead", { children: (0, import_jsx_runtime.jsx)("tr", { children: [
@@ -466,28 +542,6 @@ function StoragePage(props) {
         })
       }, provider.id)) })
     ] }),
-    adding ? (0, import_jsx_runtime.jsx)(EntryForm, {
-      types,
-      t,
-      first: providers.length === 0,
-      onCancel: () => setAdding(false),
-      onSaved: async () => {
-        setAdding(false);
-        await reloadAfterWrite(providers.length + 1);
-      }
-    }) : editingId === null ? (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy || loading, onClick: () => setAdding(true), children: t("add") }) : (0, import_jsx_runtime.jsx)(EntryForm, {
-      types,
-      t,
-      initial: (() => {
-        const provider = providers.find((item) => item.id === editingId);
-        return provider === void 0 ? void 0 : { ...provider, index: providers.indexOf(provider) };
-      })(),
-      onCancel: () => setEditingId(null),
-      onSaved: async () => {
-        setEditingId(null);
-        await reloadAfterWrite(providers.length);
-      }
-    }),
     (0, import_jsx_runtime.jsx)("p", { style: styles.note, children: "API: /__fs" })
   ] });
 }

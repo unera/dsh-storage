@@ -38,7 +38,8 @@ const styles = {
   icon: { width: 16, height: 16, display: 'block' },
   typeIcon: { width: 22, height: 22, marginRight: 8, flex: '0 0 auto' },
   nameCell: { display: 'flex', alignItems: 'flex-start', gap: 0 },
-  badges: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'nowrap' },
+  badges: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', maxWidth: 190 },
+  buttonColumn: { display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' },
   // No `cursor: help`: a question-mark pointer on a small pill reads as a puzzle
   // rather than as a tooltip, and the hint appears on hover anyway.
   pill: { display: 'inline-block', padding: '1px 7px', borderRadius: 10, fontSize: 12, whiteSpace: 'nowrap' },
@@ -133,7 +134,7 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
           ? jsx(Pill, { tone: styles.pillGrey, hint: t('hintFreeUnknown'), children: '—' })
           : jsx(Pill, { tone: styles.pillFree, hint: t('hintFree'), children: free }),
       ] }) }),
-      jsx('td', { style: { ...styles.td, whiteSpace: 'nowrap' }, children: [
+      jsx('td', { style: { ...styles.td, whiteSpace: 'nowrap', verticalAlign: 'top' }, children: jsx('div', { style: styles.buttonColumn, children: [
         jsx(IconButton, { icon: 'edit', title: t('edit'),
           disabled: busy, onClick: () => onEdit(provider.id) }),
         jsx(IconButton, { icon: 'test', title: t('test'),
@@ -142,7 +143,7 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
           disabled: busy, onClick: () => onPrimary(provider.id) }),
         jsx(IconButton, { icon: 'remove', title: t('remove'),
           disabled: busy, onClick: () => onRemove(provider.id) }),
-      ] }),
+      ] }) }),
     ],
   })
 }
@@ -162,6 +163,10 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const [region, setRegion] = useState(initial?.options?.region ?? '')
   const [endpoint, setEndpoint] = useState(initial?.options?.endpoint ?? '')
   const [baseUrl, setBaseUrl] = useState(initial?.options?.baseUrl ?? '')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [clientId, setClientId] = useState(initial?.options?.clientId ?? '')
+  const [token, setToken] = useState('')
   const [secret, setSecret] = useState('')
   const [enabled, setEnabled] = useState(initial?.enabled !== false)
   const [readOnly, setReadOnly] = useState(initial?.readOnly === true)
@@ -175,7 +180,21 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const optionsFor = () => {
     if (type === 'local') return { root: root.trim() }
     if (type === 'webdav') return { baseUrl: baseUrl.trim() }
+    if (type === 'yadisk') return { ...(clientId.trim() === '' ? {} : { clientId: clientId.trim() }) }
     return { bucket: bucket.trim(), ...(region.trim() === '' ? {} : { region: region.trim() }), ...(endpoint.trim() === '' ? {} : { endpoint: endpoint.trim() }) }
+  }
+
+  /**
+   * The secret depends on the driver: two fields for WebDAV, a token for Yandex,
+   * a JSON blob for S3. An empty secret means "keep what is stored".
+   */
+  const secretFor = () => {
+    if (type === 'webdav') {
+      if (username.trim() === '' && password.trim() === '') return undefined
+      return JSON.stringify({ username: username.trim(), password: password.trim() })
+    }
+    if (type === 'yadisk') return token.trim() === '' ? undefined : token.trim()
+    return secret.trim() === '' ? undefined : secret.trim()
   }
 
   const submit = async () => {
@@ -189,7 +208,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         enabled,
         readOnly,
         options: optionsFor(),
-        ...(secret.trim() === '' ? {} : { secret: secret.trim() }),
+        ...(secretFor() === undefined ? {} : { secret: secretFor() }),
       }
       if (editing) await request(`/providers/${initial.index}`, { method: 'PATCH', body: payload })
       else await request('/providers', { method: 'POST', body: { ...payload, type } })
@@ -226,10 +245,38 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         ] }),
       ] })
       : type === 'webdav'
-      ? jsx('div', { style: styles.row, children: [
+      ? jsxs('div', { children: [
+        jsx('div', { style: styles.row, children: [
+          jsx('label', { style: styles.field, children: [
+            jsx('span', { children: 'baseUrl' }),
+            jsx('input', { style: styles.input, value: baseUrl, placeholder: 'https://cloud.example/remote.php/dav/files/user', onChange: event => setBaseUrl(event.target.value) }),
+          ] }),
+        ] }),
+        jsx('div', { style: styles.row, children: [
+          jsx('label', { style: styles.field, children: [
+            jsx('span', { children: t('login') }),
+            jsx('input', { style: styles.input, value: username, autoComplete: 'off', onChange: event => setUsername(event.target.value) }),
+          ] }),
+          jsx('label', { style: styles.field, children: [
+            jsx('span', { children: t('password') }),
+            jsx('input', { style: styles.input, type: 'password', value: password, autoComplete: 'new-password', onChange: event => setPassword(event.target.value) }),
+            jsx('span', { style: styles.hint, children: editing ? t('secretKeep') : t('passwordHint') }),
+          ] }),
+        ] }),
+      ] })
+      : type === 'yadisk'
+      ? jsxs('div', { children: [
+        jsx('div', { style: styles.row, children: [
+          jsx('label', { style: styles.field, children: [
+            jsx('span', { children: t('clientId') }),
+            jsx('input', { style: styles.input, value: clientId, placeholder: 'идентификатор приложения', onChange: event => setClientId(event.target.value) }),
+            jsx('span', { style: styles.hint, children: t('clientIdHint') }),
+          ] }),
+        ] }),
         jsx('label', { style: styles.field, children: [
-          jsx('span', { children: 'baseUrl' }),
-          jsx('input', { style: styles.input, value: baseUrl, placeholder: 'https://cloud.example/remote.php/dav/files/user', onChange: event => setBaseUrl(event.target.value) }),
+          jsx('span', { children: t('token') }),
+          jsx('textarea', { style: { ...styles.input, minHeight: 60 }, value: token, onChange: event => setToken(event.target.value) }),
+          jsx('span', { style: styles.hint, children: editing ? t('secretKeep') : t('tokenHint') }),
         ] }),
       ] })
       : jsxs('div', { children: [
@@ -340,11 +387,36 @@ export function StoragePage(props) {
   }
 
   const indexOf = id => providers.findIndex(provider => provider.id === id)
+  /** The form showing right now: a new entry, or an existing one being edited. */
+  const form = adding
+    ? { key: 'new' }
+    : editingId === null
+      ? null
+      : (() => {
+        const provider = providers.find(item => item.id === editingId)
+        return provider === undefined ? null : { key: provider.id, initial: { ...provider, index: providers.indexOf(provider) } }
+      })()
 
   return jsx('div', { children: [
     jsx('p', { style: styles.intro, children: t('intro') }),
     loading ? jsx('p', { style: styles.hint, children: t('loading') }) : null,
     error === null ? null : jsx('div', { style: styles.error, children: error }),
+    form === null
+      ? jsx('button', { style: styles.button, disabled: busy || loading, onClick: () => { setAdding(true); setEditingId(null) }, children: t('add') })
+      : jsx(EntryForm, {
+        key: form.key,
+        types,
+        t,
+        first: providers.length === 0 && form.initial === undefined,
+        initial: form.initial,
+        onCancel: () => { setAdding(false); setEditingId(null) },
+        onSaved: async () => {
+          const wasEditing = form.initial !== undefined
+          setAdding(false)
+          setEditingId(null)
+          await reloadAfterWrite(wasEditing ? providers.length : providers.length + 1)
+        },
+      }),
     providers.length === 0 && !loading ? jsx('p', { style: styles.hint, children: t('empty') }) : null,
     providers.length === 0 ? null : jsx('table', { style: styles.table, children: [
       jsx('thead', { children: jsx('tr', { children: [
@@ -366,26 +438,6 @@ export function StoragePage(props) {
         }),
       }, provider.id)) }),
     ] }),
-    adding
-      ? jsx(EntryForm, {
-        types,
-        t,
-        first: providers.length === 0,
-        onCancel: () => setAdding(false),
-        onSaved: async () => { setAdding(false); await reloadAfterWrite(providers.length + 1) },
-      })
-      : editingId === null
-        ? jsx('button', { style: styles.button, disabled: busy || loading, onClick: () => setAdding(true), children: t('add') })
-        : jsx(EntryForm, {
-          types,
-          t,
-          initial: (() => {
-            const provider = providers.find(item => item.id === editingId)
-            return provider === undefined ? undefined : { ...provider, index: providers.indexOf(provider) }
-          })(),
-          onCancel: () => setEditingId(null),
-          onSaved: async () => { setEditingId(null); await reloadAfterWrite(providers.length) },
-        }),
     jsx('p', { style: styles.note, children: 'API: /__fs' }),
   ] })
 }
