@@ -40,6 +40,12 @@ const styles = {
   nameCell: { display: 'flex', alignItems: 'flex-start', gap: 0 },
   badges: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', maxWidth: 190 },
   buttonColumn: { display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' },
+  iconColumn: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: '0 0 auto' },
+  // The primary mark doubles as the switch: a star that is grey until the entry
+  // is the default target, and green once it is.
+  starPill: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 18, padding: 0, borderRadius: 9, border: 'none' },
+  starOn: { background: 'rgba(60,180,90,0.45)' },
+  starOff: { background: 'rgba(128,128,128,0.25)' },
   // No `cursor: help`: a question-mark pointer on a small pill reads as a puzzle
   // rather than as a tooltip, and the hint appears on hover anyway.
   pill: { display: 'inline-block', padding: '1px 7px', borderRadius: 10, fontSize: 12, whiteSpace: 'nowrap' },
@@ -116,7 +122,17 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
   return jsx('tr', {
     children: [
       jsx('td', { style: styles.td, children: jsx('div', { style: styles.nameCell, children: [
-        jsx('img', { src: ICONS[provider.type], alt: '', style: styles.typeIcon }),
+        jsx('div', { style: styles.iconColumn, children: [
+          jsx('img', { src: ICONS[provider.type], alt: '', style: { ...styles.typeIcon, marginRight: 0 } }),
+          jsx('button', {
+            style: { ...styles.starPill, ...(provider.role === 'primary' ? styles.starOn : styles.starOff), cursor: provider.role === 'primary' ? 'default' : 'pointer' },
+            title: provider.role === 'primary' ? t('primary') : t('makePrimary'),
+            'aria-label': provider.role === 'primary' ? t('primary') : t('makePrimary'),
+            disabled: busy || provider.role === 'primary',
+            onClick: () => onPrimary(provider.id),
+            children: jsx('img', { src: ICONS.primary, alt: '', style: { width: 12, height: 12, display: 'block' } }),
+          }),
+        ] }),
         jsx('div', { children: [
           jsx('strong', { children: provider.label }),
           jsx('div', { style: styles.hint, children: `${TYPE_LABELS[provider.type] ?? provider.type} · ${provider.id}${provider.role === 'primary' ? ` · ${t('primary')}` : ''}` }),
@@ -139,8 +155,6 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
           disabled: busy, onClick: () => onEdit(provider.id) }),
         jsx(IconButton, { icon: 'test', title: t('test'),
           disabled: busy, onClick: () => onTest(provider.id) }),
-        provider.role === 'primary' ? null : jsx(IconButton, { icon: 'primary', title: t('makePrimary'),
-          disabled: busy, onClick: () => onPrimary(provider.id) }),
         jsx(IconButton, { icon: 'remove', title: t('remove'),
           disabled: busy, onClick: () => onRemove(provider.id) }),
       ] }) }),
