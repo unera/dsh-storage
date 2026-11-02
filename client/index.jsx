@@ -20,6 +20,8 @@ const ICONS = {
   webdav: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#5aa9e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 .6-8A6 6 0 0 0 6 11a3.5 3.5 0 0 0 .5 7z"/></svg>'),
   yadisk: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#fc3f1d"/><path d="M9 18V9.2c0-2 1.3-3.2 3.3-3.2H15v2.4h-2.2c-.8 0-1.2.4-1.2 1.2V11l3.6 7h-2.7l-3-6v6z" fill="#fff"/></svg>'),
   edit: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16z"/></svg>'),
+  save: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>'),
+  cancel: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'),
   test: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/></svg>'),
   primary: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.9 5.9 6.1.9-4.4 4.3 1 6.4-5.6-3-5.6 3 1-6.4L3 9.8l6.1-.9z"/></svg>'),
   remove: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>'),
@@ -218,8 +220,10 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
 
   // The device flow lives on a saved entry: the host needs an entry to attach the
   // token to and a client id to name. Say so instead of leaving a dead button.
-  const deviceReady = clientId.trim() !== ''
-  const deviceBlockedReason = deviceReady ? '' : t('clientIdHint')
+  // Always clickable: a dead button cannot explain itself, and a click that says
+  // "fill the application id first" teaches more than a grey rectangle.
+  const deviceReady = true
+  const deviceBlockedReason = clientId.trim() === '' ? t('clientIdHint') : ''
 
   /**
    * Device flow: ask the host for a user code, show it, then poll the host until
@@ -228,6 +232,10 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
    */
   const startDevice = async () => {
     setError(null)
+    if (clientId.trim() === '') {
+      setError(t('clientIdHint'))
+      return
+    }
     try {
       const started = await request('/auth/device/start', { method: 'POST', body: { id: entryId, clientId: clientId.trim(), type } })
       setDeviceState(started.state)
@@ -396,8 +404,16 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         jsx('input', { type: 'checkbox', checked: readOnly, onChange: event => setReadOnly(event.target.checked) }),
         ` ${t('readOnlyLabel')}`,
       ] }),
-      jsx('button', { style: styles.button, disabled: busy, onClick: submit, children: t('save') }),
-      jsx('button', { style: styles.button, disabled: busy, onClick: onCancel, children: t('cancel') }),
+    ] }),
+    jsx('div', { style: { marginTop: 12, display: 'flex', gap: 8 }, children: [
+      jsx('button', { style: styles.button, disabled: busy, onClick: submit, children: [
+        jsx('img', { src: ICONS.save, alt: '', style: { ...styles.icon, display: 'inline-block', verticalAlign: '-3px', marginRight: 6 } }),
+        t('save'),
+      ] }),
+      jsx('button', { style: styles.button, disabled: busy, onClick: onCancel, children: [
+        jsx('img', { src: ICONS.cancel, alt: '', style: { ...styles.icon, display: 'inline-block', verticalAlign: '-3px', marginRight: 6 } }),
+        t('cancel'),
+      ] }),
     ] }),
   ] })
 }
@@ -550,10 +566,16 @@ export function StoragePage(props) {
           },
         ),
         onEdit: id => { setEditingId(id); setAdding(false) },
-        onRemove: id => act(async () => {
+        onRemove: id => {
           if (typeof window !== 'undefined' && typeof window.confirm === 'function' && !window.confirm(t('confirmRemove'))) return
-          await request(`/providers/${indexOf(id)}`, { method: 'DELETE' })
-        }),
+          return act(
+            async () => { await request(`/providers/${indexOf(id)}`, { method: 'DELETE' }) },
+            {
+              optimistic: previous => previous.filter(item => item.id !== id),
+              until: next => next.every(item => item.id !== id),
+            },
+          )
+        },
       }, provider.id)) }),
     ] }),
   ] })
