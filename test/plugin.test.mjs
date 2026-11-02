@@ -11,7 +11,7 @@ import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools } from '../
  * stubbed out. `ctx.start()` is what makes `inject` callbacks run, so this checks
  * the actual wiring rather than a hand-rolled imitation of it.
  */
-async function boot({ providers = [] } = {}) {
+async function boot({ providers = [], resolveValue = undefined } = {}) {
   const ctx = new Context()
   const record = { tools: [], sections: [], routes: [], configured: [], document: { providers } }
   ctx.provide('tools', { register: tool => record.tools.push(tool) })
@@ -26,7 +26,7 @@ async function boot({ providers = [] } = {}) {
   })
   ctx.provide('webServer', { register: route => { record.routes.push(route); return () => {} } })
   ctx.provide('credentials', {
-    resolve: async () => undefined,
+    resolve: async () => resolveValue,
     set: async () => {},
     describe: async () => ({ configured: false }),
   })
@@ -196,4 +196,21 @@ test('renderers produce one text block and never throw on an empty result', () =
   const df = byName.get('storage_df').output.render({}, { storage: 'st-0001' })
   assert.equal(df[0].type, 'text')
   assert.match(df[0].text, /неизвестно/)
+})
+
+test('a resolved credential object reaches the driver as its value', async () => {
+  // `credentials.resolve()` answers `{ value, source }`; handing that object to a
+  // driver makes it report "no credentials" even though the secret is stored.
+  const { ctx, record } = await boot({
+    providers: [{ id: 'st-0001', type: 's3', options: { bucket: 'b', endpoint: 'http://127.0.0.1:1' } }],
+    resolveValue: { value: JSON.stringify({ accessKeyId: 'a', secretAccessKey: 'b' }), source: 'file' },
+  })
+  try {
+    const response = await call(record.routes[0].handler, { method: 'POST', url: '/__fs/providers/0/test' })
+    // The endpoint is unreachable, so anything except "credential missing" means
+    // the secret really arrived.
+    assert.doesNotMatch(response.body.status.message, /no credentials/i)
+  } finally {
+    await ctx.stop?.()
+  }
 })

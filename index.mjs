@@ -478,7 +478,11 @@ export class Filestore extends Service {
     const resolveSecret = async () => {
       const store = this.secretSource()
       if (store === null || typeof store.resolve !== 'function') return undefined
-      return store.resolve(entry.credentialRef)
+      const resolved = await store.resolve(entry.credentialRef)
+      if (resolved === undefined || resolved === null) return undefined
+      // `credentials.resolve` answers `{ value, source }`, not a bare string; a
+      // driver handed the object reports "no credentials" forever.
+      return typeof resolved === 'string' ? resolved : resolved.value
     }
     return factory(entry, { resolveSecret })
   }

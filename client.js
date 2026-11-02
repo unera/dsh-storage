@@ -436,7 +436,7 @@ function apply(ctx) {
   try {
     ctx.effect(() => {
       try {
-        return ctx.locale.addLanguage("ru");
+        return ctx.locale.addLanguage({ id: "ru", label: "\u0420\u0443\u0441\u0441\u043A\u0438\u0439", fallback: "en" });
       } catch (error) {
         if (!/already/i.test(String(error?.message ?? error))) throw error;
         return () => {

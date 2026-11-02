@@ -346,12 +346,14 @@ export function apply(ctx) {
     console.warn(`[dsh-storage] dictionaries failed: ${error?.message ?? error}`)
   }
 
-  // Another plugin may have registered `ru` first; a duplicate must not take
+  // `addLanguage` takes a registration object, not a tag: a bare 'ru' leaves
+  // `id` undefined and throws "locale id \"undefined\" is not a BCP 47-style tag".
+  // Another plugin may have registered `ru` first, and a duplicate must not take
   // this page down with it.
   try {
     ctx.effect(() => {
       try {
-        return ctx.locale.addLanguage('ru')
+        return ctx.locale.addLanguage({ id: 'ru', label: 'Русский', fallback: 'en' })
       } catch (error) {
         if (!/already/i.test(String(error?.message ?? error))) throw error
         return () => {}
