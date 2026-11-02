@@ -933,14 +933,22 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         const providers = []
         for (const entry of entries) {
           let secretConfigured = false
+          let clientSecretConfigured = false
           if (typeof store?.describe === 'function') {
             try {
               secretConfigured = (await store.describe(entry.credentialRef))?.configured === true
             } catch {
               secretConfigured = false
             }
+            try {
+              clientSecretConfigured = (await store.describe(makeCredentialRef(`${entry.id}-client`)))?.configured === true
+            } catch {
+              clientSecretConfigured = false
+            }
           }
-          providers.push({ ...entry, secretConfigured, status: filestore.status(entry.id) })
+          // Two different secrets: the user token and the application secret. A
+          // single "secret is set" line hid which one was missing.
+          providers.push({ ...entry, secretConfigured, clientSecretConfigured, status: filestore.status(entry.id) })
         }
         return json(response, 200, { providers, types: PROVIDER_TYPES, capabilities: CAPABILITIES })
       }
