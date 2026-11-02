@@ -169,6 +169,9 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
  */
 function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const editing = initial !== undefined
+  // One id per form, allocated on open and sent with the save: a token taken by
+  // the device handshake before saving then lands on this very entry.
+  const [entryId] = useState(() => initial?.id ?? `st-${Math.random().toString(36).slice(2, 6)}`)
   const [type, setType] = useState(initial?.type ?? types[0] ?? 'local')
   const [label, setLabel] = useState(initial?.label ?? '')
   const [basePath, setBasePath] = useState(initial?.basePath ?? '')
@@ -215,12 +218,8 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
 
   // The device flow lives on a saved entry: the host needs an entry to attach the
   // token to and a client id to name. Say so instead of leaving a dead button.
-  const deviceReady = editing && clientId.trim() !== ''
-  const deviceBlockedReason = !editing
-    ? t('deviceSaveFirst')
-    : clientId.trim() === ''
-      ? t('clientIdHint')
-      : ''
+  const deviceReady = clientId.trim() !== ''
+  const deviceBlockedReason = deviceReady ? '' : t('clientIdHint')
 
   /**
    * Device flow: ask the host for a user code, show it, then poll the host until
@@ -230,7 +229,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const startDevice = async () => {
     setError(null)
     try {
-      const started = await request(`/providers/${editing ? initial.index : 0}/auth/device/start`, { method: 'POST', body: {} })
+      const started = await request('/auth/device/start', { method: 'POST', body: { id: entryId, clientId: clientId.trim(), type } })
       setDeviceState(started.state)
       setDevice({ userCode: started.userCode, verificationUrl: started.verificationUrl, status: 'waiting' })
       const intervalMs = Math.max(1000, Number(started.interval ?? 5) * 1000)
@@ -241,7 +240,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
           return
         }
         try {
-          const answer = await request(`/providers/${editing ? initial.index : 0}/auth/device/poll`, { method: 'POST', body: { state: started.state } })
+          const answer = await request('/auth/device/poll', { method: 'POST', body: { state: started.state } })
           if (answer.status === 'ok') {
             setDevice(current => current === null ? null : { ...current, status: 'ok' })
             setToken('')
@@ -276,7 +275,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         ...(secretFor() === undefined ? {} : { secret: secretFor() }),
       }
       if (editing) await request(`/providers/${initial.index}`, { method: 'PATCH', body: payload })
-      else await request('/providers', { method: 'POST', body: { ...payload, type } })
+      else await request('/providers', { method: 'POST', body: { ...payload, type, id: entryId } })
       await onSaved()
     } catch (problem) {
       setError(problem.message)

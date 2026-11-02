@@ -948,7 +948,12 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
       if (request.method === 'POST' && parts.length === 1 && parts[0] === 'providers') {
         const body = await readBody(request)
         const providers = read()
-        const candidate = normalizeEntry({ ...body, id: makeEntryId(providers.length) }, providers.length)
+        // The panel allocates an id when the form opens, so a credential taken by
+        // the device handshake before saving already points at the right entry.
+        const provided = typeof body?.id === 'string' && /^st-[a-z0-9]{4,16}$/i.test(body.id) && !providers.some(entry => entry?.id === body.id)
+          ? body.id
+          : undefined
+        const candidate = normalizeEntry({ ...body, id: provided ?? makeEntryId(providers.length) }, providers.length)
         if (candidate === undefined) return json(response, 400, { error: `unknown storage type ${JSON.stringify(body?.type)}`, code: 'FILESTORE_UNSUPPORTED' })
         if (body?.secret !== undefined && String(body.secret) !== '') {
           const store = credentialsOf()
@@ -958,6 +963,90 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         if (body?.role === 'primary') for (const entry of next) if (entry.id !== candidate.id) entry.role = 'secondary'
         write(next)
         return json(response, 201, { provider: candidate })
+      }
+
+      // Device handshake that does not need a saved entry yet: the panel sends the
+      // entry id it is about to save and the application id typed into the form.
+      if (request.method === 'POST' && parts[0] === 'auth' && parts[1] === 'device' && parts[2] === 'start') {
+        const body = await readBody(request)
+        const entryId = typeof body?.id === 'string' ? body.id.trim() : ''
+        const clientId = typeof body?.clientId === 'string' ? body.clientId.trim() : ''
+        const type = typeof body?.type === 'string' ? body.type : 'yadisk'
+        const descriptor = OAUTH_PROVIDERS[type]
+        if (!/^st-[a-z0-9]{4,16}$/i.test(entryId)) return json(response, 400, { error: 'нужен идентификатор записи', code: 'FILESTORE_BAD_REQUEST' })
+        if (descriptor?.deviceCodeUrl === undefined) return json(response, 400, { error: `тип ${type} не умеет вход по коду`, code: 'FILESTORE_NO_DEVICE_FLOW' })
+        if (clientId === '') return json(response, 400, { error: 'нужен client_id приложения', code: 'FILESTORE_NO_CLIENT_ID' })
+        const form = new URLSearchParams({ client_id: clientId })
+        if (typeof descriptor.scope === 'string') form.set('scope', descriptor.scope)
+        const answer = await oauthTransport.fetch(descriptor.deviceCodeUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: form,
+        })
+        const answerBody = await answer.json().catch(() => ({}))
+        if (!answer.ok || typeof answerBody.device_code !== 'string') {
+          return json(response, 400, {
+            error: answerBody?.error_description ?? 'провайдер не выдал код устройства',
+            code: 'FILESTORE_DEVICE_FLOW_FAILED',
+          })
+        }
+        const state = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+        const interval = Number(answerBody.interval ?? 5)
+        const expiresIn = Number(answerBody.expires_in ?? 300)
+        deviceStates.set(state, {
+          entryId,
+          credentialRef: makeCredentialRef(entryId),
+          clientId,
+          tokenUrl: descriptor.tokenUrl,
+          deviceCode: answerBody.device_code,
+          intervalMs: Math.max(1000, interval * 1000),
+          expiresAt: Date.now() + Math.max(30, expiresIn) * 1000,
+          lastPollAt: Date.now(),
+        })
+        return json(response, 200, {
+          state,
+          userCode: answerBody.user_code,
+          verificationUrl: answerBody.verification_url ?? descriptor.verificationUrl,
+          interval,
+          expiresIn,
+        })
+      }
+
+      if (request.method === 'POST' && parts[0] === 'auth' && parts[1] === 'device' && parts[2] === 'poll') {
+        const body = await readBody(request)
+        const state = String(body?.state ?? '')
+        const record = deviceStates.get(state)
+        if (record === undefined) return json(response, 200, { status: 'expired' })
+        if (Date.now() > record.expiresAt) {
+          deviceStates.delete(state)
+          return json(response, 200, { status: 'expired' })
+        }
+        if (Date.now() - record.lastPollAt < record.intervalMs) return json(response, 200, { status: 'pending' })
+        record.lastPollAt = Date.now()
+        const form = new URLSearchParams({ grant_type: 'device_code', code: record.deviceCode, client_id: record.clientId })
+        const store = credentialsOf()
+        if (typeof store?.resolve === 'function') {
+          const secret = await store.resolve(makeCredentialRef(`${record.entryId}-client`)).catch(() => undefined)
+          const value = secret?.value ?? (typeof secret === 'string' ? secret : undefined)
+          if (typeof value === 'string' && value !== '') form.set('client_secret', value)
+        }
+        const answer = await oauthTransport.fetch(record.tokenUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: form,
+        })
+        const answerBody = await answer.json().catch(() => ({}))
+        if (answerBody?.error === 'authorization_pending') return json(response, 200, { status: 'pending' })
+        if (!answer.ok || typeof answerBody.access_token !== 'string') {
+          deviceStates.delete(state)
+          return json(response, 200, {
+            status: 'error',
+            error: answerBody?.error_description ?? answerBody?.error ?? 'провайдер не выдал токен',
+          })
+        }
+        if (typeof store?.set === 'function') await store.set(record.credentialRef, answerBody.access_token)
+        deviceStates.delete(state)
+        return json(response, 200, { status: 'ok' })
       }
 
       if (parts[0] === 'providers' && parts.length >= 2) {

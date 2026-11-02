@@ -306,6 +306,7 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
 }
 function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const editing = initial !== void 0;
+  const [entryId] = (0, import_react.useState)(() => initial?.id ?? `st-${Math.random().toString(36).slice(2, 6)}`);
   const [type, setType] = (0, import_react.useState)(initial?.type ?? types[0] ?? "local");
   const [label, setLabel] = (0, import_react.useState)(initial?.label ?? "");
   const [basePath, setBasePath] = (0, import_react.useState)(initial?.basePath ?? "");
@@ -341,12 +342,12 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
     if (type === "yadisk") return token.trim() === "" ? void 0 : token.trim();
     return secret.trim() === "" ? void 0 : secret.trim();
   };
-  const deviceReady = editing && clientId.trim() !== "";
-  const deviceBlockedReason = !editing ? t("deviceSaveFirst") : clientId.trim() === "" ? t("clientIdHint") : "";
+  const deviceReady = clientId.trim() !== "";
+  const deviceBlockedReason = deviceReady ? "" : t("clientIdHint");
   const startDevice = async () => {
     setError(null);
     try {
-      const started = await request(`/providers/${editing ? initial.index : 0}/auth/device/start`, { method: "POST", body: {} });
+      const started = await request("/auth/device/start", { method: "POST", body: { id: entryId, clientId: clientId.trim(), type } });
       setDeviceState(started.state);
       setDevice({ userCode: started.userCode, verificationUrl: started.verificationUrl, status: "waiting" });
       const intervalMs = Math.max(1e3, Number(started.interval ?? 5) * 1e3);
@@ -357,7 +358,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
           return;
         }
         try {
-          const answer = await request(`/providers/${editing ? initial.index : 0}/auth/device/poll`, { method: "POST", body: { state: started.state } });
+          const answer = await request("/auth/device/poll", { method: "POST", body: { state: started.state } });
           if (answer.status === "ok") {
             setDevice((current) => current === null ? null : { ...current, status: "ok" });
             setToken("");
@@ -391,7 +392,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         ...secretFor() === void 0 ? {} : { secret: secretFor() }
       };
       if (editing) await request(`/providers/${initial.index}`, { method: "PATCH", body: payload });
-      else await request("/providers", { method: "POST", body: { ...payload, type } });
+      else await request("/providers", { method: "POST", body: { ...payload, type, id: entryId } });
       await onSaved();
     } catch (problem) {
       setError(problem.message);

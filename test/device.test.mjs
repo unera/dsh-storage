@@ -118,3 +118,35 @@ test('without a client id the flow is refused before any network call', async ()
     await ctx.stop?.()
   }
 })
+
+test('the handshake works before the entry is saved, and the id survives the save', async () => {
+  deviceStates.clear()
+  const { ctx, handler, record } = await boot([])
+  const original = oauthTransport.fetch
+  oauthTransport.fetch = async (url) => (String(url).includes('/device/code')
+    ? new Response(JSON.stringify({ device_code: 'dev-2', user_code: 'aaaa1111', verification_url: 'https://oauth.yandex.com/device', interval: 1, expires_in: 60 }), { status: 200 })
+    : new Response(JSON.stringify({ access_token: 'tok-2' }), { status: 200 }))
+  try {
+    const started = await call(handler, {
+      method: 'POST',
+      url: '/__fs/auth/device/start',
+      body: { id: 'st-abcd', clientId: 'app-2', type: 'yadisk' },
+    })
+    assert.equal(started.status, 200)
+    assert.equal(started.body.userCode, 'aaaa1111')
+
+    const recordState = deviceStates.get(started.body.state)
+    recordState.lastPollAt = 0
+    const confirmed = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+    assert.equal(confirmed.body.status, 'ok')
+    // The token is already under the id the form will save with.
+    assert.equal(record.stored.get('DSH_FILESTORE_ST_ABCD'), 'tok-2')
+
+    const created = await call(handler, { method: 'POST', url: '/__fs/providers', body: { id: 'st-abcd', type: 'yadisk', label: 'yandex', options: { clientId: 'app-2' } } })
+    assert.equal(created.status, 201)
+    assert.equal(created.body.provider.id, 'st-abcd')
+  } finally {
+    oauthTransport.fetch = original
+    await ctx.stop?.()
+  }
+})
