@@ -908,7 +908,20 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
   }
 }
 
-/** Plugin config: the fallback entry list when the settings document is empty. */
+/** Read the entry list from a `volatile()` field or a plain array. */
+export function unwrapProviders(value) {
+  const plain = typeof value?.get === 'function' ? value.get() : value
+  return Array.isArray(plain) ? plain : []
+}
+
+/**
+ * Plugin config: the fallback entry list when the settings document is empty.
+ *
+ * `providers` is `volatile()` on purpose: the settings service only persists
+ * fields marked volatile, and without the mark every `settings.update` fails
+ * with `Plugin entry "dsh-storage" has no volatile fields` — which happens
+ * during boot, not at the first write, so it takes the whole host down.
+ */
 export const Config = z.object({
   providers: z.array(z.object({
     id: z.string(),
@@ -919,7 +932,7 @@ export const Config = z.object({
     readOnly: z.boolean().default(false),
     basePath: z.string().default(''),
     options: z.object({}),
-  })).default([]),
+  })).default([]).volatile(),
 })
 
 /**
@@ -932,7 +945,7 @@ export const Config = z.object({
  */
 export function apply(ctx, config = {}) {
   const filestore = new Filestore(ctx)
-  const fallback = normalizeEntries(config.providers).entries
+  const fallback = normalizeEntries(unwrapProviders(config.providers)).entries
   const shared = { settings: null, credentials: null }
 
   ctx.inject(['settings'], child => {
