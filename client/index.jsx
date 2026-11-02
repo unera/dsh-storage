@@ -10,6 +10,19 @@ const TYPE_LABELS = {
   local: 'Каталог на этом хосте',
   s3: 'S3-совместимый',
   webdav: 'WebDAV',
+  yadisk: 'Яндекс.Диск',
+}
+
+/** Inline SVG marks, so the panel never fetches an image from outside. */
+const ICONS = {
+  local: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="#8aa0b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'),
+  s3: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="#e0a23c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>'),
+  webdav: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="#5aa9e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 .6-8A6 6 0 0 0 6 11a3.5 3.5 0 0 0 .5 7z"/></svg>'),
+  yadisk: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#fc3f1d"/><path d="M9 18V9.2c0-2 1.3-3.2 3.3-3.2H15v2.4h-2.2c-.8 0-1.2.4-1.2 1.2V11l3.6 7h-2.7l-3-6v6z" fill="#fff"/></svg>'),
+  edit: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16z"/></svg>'),
+  test: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/></svg>'),
+  primary: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.9 5.9 6.1.9-4.4 4.3 1 6.4-5.6-3-5.6 3 1-6.4L3 9.8l6.1-.9z"/></svg>'),
+  remove: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>'),
 }
 
 const styles = {
@@ -21,6 +34,16 @@ const styles = {
   ok: { background: 'rgba(60,180,90,0.25)' },
   bad: { background: 'rgba(220,80,70,0.25)' },
   button: { marginRight: 6, marginTop: 2, padding: '3px 8px', cursor: 'pointer' },
+  square: { width: 28, height: 28, padding: 0, marginRight: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 6 },
+  icon: { width: 16, height: 16, display: 'block' },
+  typeIcon: { width: 22, height: 22, marginRight: 8, flex: '0 0 auto' },
+  nameCell: { display: 'flex', alignItems: 'flex-start', gap: 0 },
+  badges: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' },
+  pill: { display: 'inline-block', padding: '1px 7px', borderRadius: 10, fontSize: 12, whiteSpace: 'nowrap', cursor: 'help' },
+  pillOk: { background: 'rgba(60,180,90,0.28)' },
+  pillGrey: { background: 'rgba(128,128,128,0.28)' },
+  pillBad: { background: 'rgba(220,80,70,0.28)' },
+  pillFree: { background: 'rgba(70,130,220,0.30)' },
   form: { border: '1px solid rgba(128,128,128,0.3)', borderRadius: 8, padding: 12, marginTop: 8 },
   row: { display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 },
   field: { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 220, flex: '1 1 220px' },
@@ -55,32 +78,68 @@ function bytes(value) {
 }
 
 /** One row of the storages table. */
-function StorageRow({ provider, t, onTest, onPrimary, onRemove, onEdit, busy }) {
-  const stateTone = provider.status?.state === 'ok' ? styles.ok : provider.status?.state === 'unknown' ? {} : styles.bad
+/** One square, icon-only button; the word lives in the tooltip. */
+function IconButton({ icon, title, onClick, disabled, tone }) {
+  return jsx('button', {
+    style: { ...styles.square, ...(tone === undefined ? {} : tone) },
+    title,
+    'aria-label': title,
+    disabled,
+    onClick,
+    children: jsx('img', { src: ICONS[icon], alt: '', style: styles.icon }),
+  })
+}
+
+/** A pill; `tone` picks the colour, `hint` is the tooltip. */
+function Pill({ children, tone, hint }) {
+  return jsx('span', { style: { ...styles.pill, ...tone }, title: hint, children })
+}
+
+/**
+ * One storage row. The type column and the state column are merged on purpose:
+ * everything smaller than the name fits into one strip of pills, so the name and
+ * its type keep the width.
+ */
+function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, onEdit, busy }) {
+  const state = provider.status?.state ?? 'unknown'
+  const stateTone = state === 'ok' ? styles.pillOk : state === 'unknown' ? styles.pillGrey : styles.pillBad
+  const stateHint = state === 'unknown'
+    ? t('hintUnknownState')
+    : provider.status?.message ?? state
+  const caps = capabilities?.[provider.type] ?? {}
   const free = bytes(provider.status?.freeBytes)
+  const permission = (allowed, hint) => jsx(Pill, { tone: allowed ? styles.pillOk : styles.pillBad, hint, children: hint.slice(0, 1).toUpperCase() })
+
   return jsx('tr', {
     children: [
-      jsx('td', { style: styles.td, children: [
-        jsx('strong', { children: provider.label }),
-        jsx('div', { style: styles.hint, children: `${TYPE_LABELS[provider.type] ?? provider.type} · ${provider.id}${provider.basePath === '' ? '' : ` · ${provider.basePath}`}` }),
-        provider.options?.root === undefined ? null : jsx('div', { style: styles.hint, children: provider.options.root }),
-        provider.options?.baseUrl === undefined ? null : jsx('div', { style: styles.hint, children: provider.options.baseUrl }),
-        provider.options?.bucket === undefined ? null : jsx('div', { style: styles.hint, children: `${provider.options.bucket}${provider.options.endpoint === undefined ? '' : ` · ${provider.options.endpoint}`}` }),
-      ] }),
-      jsx('td', { style: styles.td, children: [
-        jsx('span', { style: { ...styles.badge, ...stateTone }, children: provider.status?.state ?? 'unknown' }),
-        provider.status?.message === undefined ? null : jsx('div', { style: styles.hint, children: provider.status.message }),
-        provider.secretConfigured ? jsx('div', { style: styles.hint, children: t('secretSet') }) : null,
-      ] }),
-      jsx('td', { style: styles.td, children: [
-        provider.role === 'primary' ? jsx('span', { style: { ...styles.badge, ...styles.ok }, children: t('primary') }) : null,
-        jsx('div', { style: styles.hint, children: free === null ? t('unknownFree') : `${t('free')}: ${free}` }),
-      ] }),
-      jsx('td', { style: styles.td, children: [
-        jsx('button', { style: styles.button, disabled: busy, onClick: () => onEdit(provider.id), children: t('edit') }),
-        jsx('button', { style: styles.button, disabled: busy, onClick: () => onTest(provider.id), children: t('test') }),
-        provider.role === 'primary' ? null : jsx('button', { style: styles.button, disabled: busy, onClick: () => onPrimary(provider.id), children: t('makePrimary') }),
-        jsx('button', { style: styles.button, disabled: busy, onClick: () => onRemove(provider.id), children: t('remove') }),
+      jsx('td', { style: styles.td, children: jsx('div', { style: styles.nameCell, children: [
+        jsx('img', { src: ICONS[provider.type], alt: '', style: styles.typeIcon }),
+        jsx('div', { children: [
+          jsx('strong', { children: provider.label }),
+          jsx('div', { style: styles.hint, children: `${TYPE_LABELS[provider.type] ?? provider.type} · ${provider.id}${provider.role === 'primary' ? ` · ${t('primary')}` : ''}` }),
+          provider.options?.root === undefined ? null : jsx('div', { style: styles.hint, children: provider.options.root }),
+          provider.options?.baseUrl === undefined ? null : jsx('div', { style: styles.hint, children: provider.options.baseUrl }),
+          provider.options?.bucket === undefined ? null : jsx('div', { style: styles.hint, children: `${provider.options.bucket}${provider.options.endpoint === undefined ? '' : ` · ${provider.options.endpoint}`}` }),
+        ] }),
+      ] }) }),
+      jsx('td', { style: styles.td, children: jsx('div', { style: styles.badges, children: [
+        jsx(Pill, { tone: stateTone, hint: stateHint, children: state === 'unknown' ? '?' : state }),
+        permission(caps.get === true, t('hintRead')),
+        permission(caps.put === true, t('hintWrite')),
+        permission(caps.delete === true, t('hintDelete')),
+        free === null
+          ? jsx(Pill, { tone: styles.pillGrey, hint: t('hintFreeUnknown'), children: '—' })
+          : jsx(Pill, { tone: styles.pillFree, hint: t('hintFree'), children: free }),
+      ] }) }),
+      jsx('td', { style: { ...styles.td, whiteSpace: 'nowrap' }, children: [
+        jsx(IconButton, { icon: 'edit', title: t('edit'),
+          disabled: busy, onClick: () => onEdit(provider.id) }),
+        jsx(IconButton, { icon: 'test', title: t('test'),
+          disabled: busy, onClick: () => onTest(provider.id) }),
+        provider.role === 'primary' ? null : jsx(IconButton, { icon: 'primary', title: t('makePrimary'),
+          disabled: busy, onClick: () => onPrimary(provider.id) }),
+        jsx(IconButton, { icon: 'remove', title: t('remove'),
+          disabled: busy, onClick: () => onRemove(provider.id) }),
       ] }),
     ],
   })
@@ -218,6 +277,7 @@ export function StoragePage(props) {
   const t = typeof props?.t === 'function' ? props.t : key => key
   const [providers, setProviders] = useState([])
   const [types, setTypes] = useState(['local'])
+  const [capabilities, setCapabilities] = useState({})
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -228,6 +288,7 @@ export function StoragePage(props) {
     const body = await request('/providers')
     const next = Array.isArray(body.providers) ? body.providers : []
     if (Array.isArray(body.types) && body.types.length > 0) setTypes(body.types)
+    if (body.capabilities !== undefined && body.capabilities !== null) setCapabilities(body.capabilities)
     setProviders(next)
     return next
   }
@@ -286,12 +347,12 @@ export function StoragePage(props) {
     providers.length === 0 ? null : jsx('table', { style: styles.table, children: [
       jsx('thead', { children: jsx('tr', { children: [
         jsx('th', { style: styles.th, children: t('label') }),
-        jsx('th', { style: styles.th, children: t('type') }),
-        jsx('th', { style: styles.th, children: '' }),
-        jsx('th', { style: styles.th, children: '' }),
+        jsx('th', { style: { ...styles.th, width: 1 }, children: '' }),
+        jsx('th', { style: { ...styles.th, width: 1 }, children: '' }),
       ] }) }),
       jsx('tbody', { children: providers.map(provider => jsx(StorageRow, {
         provider,
+        capabilities,
         t,
         busy,
         onTest: id => act(async () => { await request(`/providers/${indexOf(id)}/test`, { method: 'POST' }) }),

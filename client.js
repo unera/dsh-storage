@@ -46,6 +46,12 @@ var DICTIONARIES = {
     "enabledLabel": "enabled",
     "readOnlyLabel": "read-only",
     "secretKeep": "leave empty to keep the current secret",
+    "hintUnknownState": 'Press "Check" to test this storage',
+    "hintRead": "read",
+    "hintWrite": "write",
+    "hintDelete": "delete",
+    "hintFree": "free space",
+    "hintFreeUnknown": "the storage does not report free space",
     "type": "Type",
     "label": "Name",
     "labelPlaceholder": "My files",
@@ -86,6 +92,12 @@ var DICTIONARIES = {
     "enabledLabel": "\u0432\u043A\u043B\u044E\u0447\u0435\u043D\u043E",
     "readOnlyLabel": "\u0442\u043E\u043B\u044C\u043A\u043E \u0447\u0442\u0435\u043D\u0438\u0435",
     "secretKeep": "\u043E\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u043F\u0443\u0441\u0442\u044B\u043C, \u0447\u0442\u043E\u0431\u044B \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u0441\u0435\u043A\u0440\u0435\u0442",
+    "hintUnknownState": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C\xBB, \u0447\u0442\u043E\u0431\u044B \u043F\u0440\u043E\u0442\u0435\u0441\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C",
+    "hintRead": "\u0447\u0442\u0435\u043D\u0438\u0435",
+    "hintWrite": "\u0437\u0430\u043F\u0438\u0441\u044C",
+    "hintDelete": "\u0443\u0434\u0430\u043B\u0435\u043D\u0438\u0435",
+    "hintFree": "\u0441\u0432\u043E\u0431\u043E\u0434\u043D\u043E\u0435 \u043C\u0435\u0441\u0442\u043E",
+    "hintFreeUnknown": "\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u043D\u0435 \u0441\u043E\u043E\u0431\u0449\u0430\u0435\u0442 \u0441\u0432\u043E\u0431\u043E\u0434\u043D\u043E\u0435 \u043C\u0435\u0441\u0442\u043E",
     "type": "\u0422\u0438\u043F",
     "label": "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435",
     "labelPlaceholder": "\u041C\u043E\u0438 \u0444\u0430\u0439\u043B\u044B",
@@ -123,7 +135,18 @@ var API = "/__fs";
 var TYPE_LABELS = {
   local: "\u041A\u0430\u0442\u0430\u043B\u043E\u0433 \u043D\u0430 \u044D\u0442\u043E\u043C \u0445\u043E\u0441\u0442\u0435",
   s3: "S3-\u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439",
-  webdav: "WebDAV"
+  webdav: "WebDAV",
+  yadisk: "\u042F\u043D\u0434\u0435\u043A\u0441.\u0414\u0438\u0441\u043A"
+};
+var ICONS = {
+  local: "data:image/svg+xml;utf8," + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="#8aa0b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'),
+  s3: "data:image/svg+xml;utf8," + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="#e0a23c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>'),
+  webdav: "data:image/svg+xml;utf8," + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="#5aa9e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 .6-8A6 6 0 0 0 6 11a3.5 3.5 0 0 0 .5 7z"/></svg>'),
+  yadisk: "data:image/svg+xml;utf8," + encodeURIComponent('<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#fc3f1d"/><path d="M9 18V9.2c0-2 1.3-3.2 3.3-3.2H15v2.4h-2.2c-.8 0-1.2.4-1.2 1.2V11l3.6 7h-2.7l-3-6v6z" fill="#fff"/></svg>'),
+  edit: "data:image/svg+xml;utf8," + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16z"/></svg>'),
+  test: "data:image/svg+xml;utf8," + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/></svg>'),
+  primary: "data:image/svg+xml;utf8," + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.9 5.9 6.1.9-4.4 4.3 1 6.4-5.6-3-5.6 3 1-6.4L3 9.8l6.1-.9z"/></svg>'),
+  remove: "data:image/svg+xml;utf8," + encodeURIComponent('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>')
 };
 var styles = {
   intro: { opacity: 0.75, margin: "0 0 16px", lineHeight: 1.5 },
@@ -134,6 +157,16 @@ var styles = {
   ok: { background: "rgba(60,180,90,0.25)" },
   bad: { background: "rgba(220,80,70,0.25)" },
   button: { marginRight: 6, marginTop: 2, padding: "3px 8px", cursor: "pointer" },
+  square: { width: 28, height: 28, padding: 0, marginRight: 4, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", borderRadius: 6 },
+  icon: { width: 16, height: 16, display: "block" },
+  typeIcon: { width: 22, height: 22, marginRight: 8, flex: "0 0 auto" },
+  nameCell: { display: "flex", alignItems: "flex-start", gap: 0 },
+  badges: { display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" },
+  pill: { display: "inline-block", padding: "1px 7px", borderRadius: 10, fontSize: 12, whiteSpace: "nowrap", cursor: "help" },
+  pillOk: { background: "rgba(60,180,90,0.28)" },
+  pillGrey: { background: "rgba(128,128,128,0.28)" },
+  pillBad: { background: "rgba(220,80,70,0.28)" },
+  pillFree: { background: "rgba(70,130,220,0.30)" },
   form: { border: "1px solid rgba(128,128,128,0.3)", borderRadius: 8, padding: 12, marginTop: 8 },
   row: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8 },
   field: { display: "flex", flexDirection: "column", gap: 4, minWidth: 220, flex: "1 1 220px" },
@@ -164,32 +197,70 @@ function bytes(value) {
   }
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
-function StorageRow({ provider, t, onTest, onPrimary, onRemove, onEdit, busy }) {
-  const stateTone = provider.status?.state === "ok" ? styles.ok : provider.status?.state === "unknown" ? {} : styles.bad;
+function IconButton({ icon, title, onClick, disabled, tone }) {
+  return (0, import_jsx_runtime.jsx)("button", {
+    style: { ...styles.square, ...tone === void 0 ? {} : tone },
+    title,
+    "aria-label": title,
+    disabled,
+    onClick,
+    children: (0, import_jsx_runtime.jsx)("img", { src: ICONS[icon], alt: "", style: styles.icon })
+  });
+}
+function Pill({ children, tone, hint }) {
+  return (0, import_jsx_runtime.jsx)("span", { style: { ...styles.pill, ...tone }, title: hint, children });
+}
+function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, onEdit, busy }) {
+  const state = provider.status?.state ?? "unknown";
+  const stateTone = state === "ok" ? styles.pillOk : state === "unknown" ? styles.pillGrey : styles.pillBad;
+  const stateHint = state === "unknown" ? t("hintUnknownState") : provider.status?.message ?? state;
+  const caps = capabilities?.[provider.type] ?? {};
   const free = bytes(provider.status?.freeBytes);
+  const permission = (allowed, hint) => (0, import_jsx_runtime.jsx)(Pill, { tone: allowed ? styles.pillOk : styles.pillBad, hint, children: hint.slice(0, 1).toUpperCase() });
   return (0, import_jsx_runtime.jsx)("tr", {
     children: [
-      (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: [
-        (0, import_jsx_runtime.jsx)("strong", { children: provider.label }),
-        (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: `${TYPE_LABELS[provider.type] ?? provider.type} \xB7 ${provider.id}${provider.basePath === "" ? "" : ` \xB7 ${provider.basePath}`}` }),
-        provider.options?.root === void 0 ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: provider.options.root }),
-        provider.options?.baseUrl === void 0 ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: provider.options.baseUrl }),
-        provider.options?.bucket === void 0 ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: `${provider.options.bucket}${provider.options.endpoint === void 0 ? "" : ` \xB7 ${provider.options.endpoint}`}` })
-      ] }),
-      (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: [
-        (0, import_jsx_runtime.jsx)("span", { style: { ...styles.badge, ...stateTone }, children: provider.status?.state ?? "unknown" }),
-        provider.status?.message === void 0 ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: provider.status.message }),
-        provider.secretConfigured ? (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: t("secretSet") }) : null
-      ] }),
-      (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: [
-        provider.role === "primary" ? (0, import_jsx_runtime.jsx)("span", { style: { ...styles.badge, ...styles.ok }, children: t("primary") }) : null,
-        (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: free === null ? t("unknownFree") : `${t("free")}: ${free}` })
-      ] }),
-      (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: [
-        (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: () => onEdit(provider.id), children: t("edit") }),
-        (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: () => onTest(provider.id), children: t("test") }),
-        provider.role === "primary" ? null : (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: () => onPrimary(provider.id), children: t("makePrimary") }),
-        (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: () => onRemove(provider.id), children: t("remove") })
+      (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: (0, import_jsx_runtime.jsx)("div", { style: styles.nameCell, children: [
+        (0, import_jsx_runtime.jsx)("img", { src: ICONS[provider.type], alt: "", style: styles.typeIcon }),
+        (0, import_jsx_runtime.jsx)("div", { children: [
+          (0, import_jsx_runtime.jsx)("strong", { children: provider.label }),
+          (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: `${TYPE_LABELS[provider.type] ?? provider.type} \xB7 ${provider.id}${provider.role === "primary" ? ` \xB7 ${t("primary")}` : ""}` }),
+          provider.options?.root === void 0 ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: provider.options.root }),
+          provider.options?.baseUrl === void 0 ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: provider.options.baseUrl }),
+          provider.options?.bucket === void 0 ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: `${provider.options.bucket}${provider.options.endpoint === void 0 ? "" : ` \xB7 ${provider.options.endpoint}`}` })
+        ] })
+      ] }) }),
+      (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: (0, import_jsx_runtime.jsx)("div", { style: styles.badges, children: [
+        (0, import_jsx_runtime.jsx)(Pill, { tone: stateTone, hint: stateHint, children: state === "unknown" ? "?" : state }),
+        permission(caps.get === true, t("hintRead")),
+        permission(caps.put === true, t("hintWrite")),
+        permission(caps.delete === true, t("hintDelete")),
+        free === null ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("hintFreeUnknown"), children: "\u2014" }) : (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillFree, hint: t("hintFree"), children: free })
+      ] }) }),
+      (0, import_jsx_runtime.jsx)("td", { style: { ...styles.td, whiteSpace: "nowrap" }, children: [
+        (0, import_jsx_runtime.jsx)(IconButton, {
+          icon: "edit",
+          title: t("edit"),
+          disabled: busy,
+          onClick: () => onEdit(provider.id)
+        }),
+        (0, import_jsx_runtime.jsx)(IconButton, {
+          icon: "test",
+          title: t("test"),
+          disabled: busy,
+          onClick: () => onTest(provider.id)
+        }),
+        provider.role === "primary" ? null : (0, import_jsx_runtime.jsx)(IconButton, {
+          icon: "primary",
+          title: t("makePrimary"),
+          disabled: busy,
+          onClick: () => onPrimary(provider.id)
+        }),
+        (0, import_jsx_runtime.jsx)(IconButton, {
+          icon: "remove",
+          title: t("remove"),
+          disabled: busy,
+          onClick: () => onRemove(provider.id)
+        })
       ] })
     ]
   });
@@ -310,6 +381,7 @@ function StoragePage(props) {
   const t = typeof props?.t === "function" ? props.t : (key) => key;
   const [providers, setProviders] = (0, import_react.useState)([]);
   const [types, setTypes] = (0, import_react.useState)(["local"]);
+  const [capabilities, setCapabilities] = (0, import_react.useState)({});
   const [loading, setLoading] = (0, import_react.useState)(true);
   const [busy, setBusy] = (0, import_react.useState)(false);
   const [error, setError] = (0, import_react.useState)(null);
@@ -319,6 +391,7 @@ function StoragePage(props) {
     const body = await request("/providers");
     const next = Array.isArray(body.providers) ? body.providers : [];
     if (Array.isArray(body.types) && body.types.length > 0) setTypes(body.types);
+    if (body.capabilities !== void 0 && body.capabilities !== null) setCapabilities(body.capabilities);
     setProviders(next);
     return next;
   };
@@ -367,12 +440,12 @@ function StoragePage(props) {
     providers.length === 0 ? null : (0, import_jsx_runtime.jsx)("table", { style: styles.table, children: [
       (0, import_jsx_runtime.jsx)("thead", { children: (0, import_jsx_runtime.jsx)("tr", { children: [
         (0, import_jsx_runtime.jsx)("th", { style: styles.th, children: t("label") }),
-        (0, import_jsx_runtime.jsx)("th", { style: styles.th, children: t("type") }),
-        (0, import_jsx_runtime.jsx)("th", { style: styles.th, children: "" }),
-        (0, import_jsx_runtime.jsx)("th", { style: styles.th, children: "" })
+        (0, import_jsx_runtime.jsx)("th", { style: { ...styles.th, width: 1 }, children: "" }),
+        (0, import_jsx_runtime.jsx)("th", { style: { ...styles.th, width: 1 }, children: "" })
       ] }) }),
       (0, import_jsx_runtime.jsx)("tbody", { children: providers.map((provider) => (0, import_jsx_runtime.jsx)(StorageRow, {
         provider,
+        capabilities,
         t,
         busy,
         onTest: (id) => act(async () => {

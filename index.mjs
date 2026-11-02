@@ -28,6 +28,7 @@ import { createHash } from 'node:crypto'
 // and the host half is shipped as plain ESM, never bundled.
 import { createS3Driver } from './s3.mjs'
 import { createWebdavDriver } from './webdav.mjs'
+import { createYandexDriver } from './yadisk.mjs'
 
 /** Stable Loader identity. */
 export const name = 'dsh-storage'
@@ -53,7 +54,7 @@ export const MAX_READ_BYTES = 256 * 1024
 export const KEEP_FILE = '.dsh-storage-keep'
 
 /** Driver types this build can actually run. */
-export const PROVIDER_TYPES = Object.freeze(['local', 's3', 'webdav'])
+export const PROVIDER_TYPES = Object.freeze(['local', 's3', 'webdav', 'yadisk'])
 
 /**
  * What each type can do. The UI asks before drawing a button, and the host
@@ -67,6 +68,9 @@ export const CAPABILITIES = Object.freeze({
     put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: false,
   }),
   webdav: Object.freeze({
+    put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
+  }),
+  yadisk: Object.freeze({
     put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
   }),
 })
@@ -407,7 +411,12 @@ export function createLocalDriver(entry) {
 }
 
 /** Everything a driver registry needs to know about each type. */
-export const DRIVERS = Object.freeze({ local: createLocalDriver, s3: createS3Driver, webdav: createWebdavDriver })
+export const DRIVERS = Object.freeze({
+  local: createLocalDriver,
+  s3: createS3Driver,
+  webdav: createWebdavDriver,
+  yadisk: createYandexDriver,
+})
 
 /** Map a Node fs error onto the storage vocabulary. */
 export function toFilestoreError(error) {
@@ -829,6 +838,31 @@ export function createStorageTools(filestore) {
   return tools.map(tool => ({ ...tool, output: { ...tool.output, render: RENDERERS[tool.name] } }))
 }
 
+/**
+ * OAuth descriptors for the types that need a browser round trip. `secretName`
+ * is the credential reference holding the application secret; the user's token
+ * lands in the entry's own credential reference.
+ */
+export const OAUTH_PROVIDERS = {
+  yadisk: {
+    label: 'Яндекс.Диск',
+    authorizeUrl: 'https://oauth.yandex.ru/authorize',
+    tokenUrl: 'https://oauth.yandex.ru/token',
+    scope: 'cloud_api:disk.read cloud_api:disk.write',
+  },
+}
+
+/** Live OAuth handshakes, keyed by state; short-lived and single-use. */
+export const oauthStates = new Map()
+
+/** How long a started handshake may sit unfinished. */
+export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000
+
+/** Drop handshakes older than the TTL. */
+export function sweepOauthStates(now = Date.now()) {
+  for (const [state, record] of oauthStates) if (now - record.startedAt > OAUTH_STATE_TTL_MS) oauthStates.delete(state)
+}
+
 /** JSON reply helper for the admin API. */
 function json(response, status, body) {
   const text = JSON.stringify(body)
@@ -919,6 +953,68 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         const providers = read()
         const index = indexOf(providers, parts[1])
         const current = normalizeEntry(providers[index], index)
+
+        // OAuth handshake, step one: hand the browser a URL and remember the state.
+        if (request.method === 'POST' && parts[2] === 'auth' && parts[3] === 'start') {
+          const descriptor = OAUTH_PROVIDERS[current.type]
+          if (descriptor === undefined) return json(response, 400, { error: `тип ${current.type} не использует OAuth`, code: 'FILESTORE_NO_OAUTH' })
+          const clientId = current.options?.clientId
+          if (typeof clientId !== 'string' || clientId.trim() === '') {
+            return json(response, 400, { error: 'нужен client_id приложения, зарегистрированного у провайдера', code: 'FILESTORE_NO_CLIENT_ID' })
+          }
+          sweepOauthStates()
+          const state = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+          const host = String(request.headers?.host ?? 'localhost')
+          const proto = String(request.headers?.['x-forwarded-proto'] ?? 'https')
+          const redirectUri = current.options?.redirectUri ?? `${proto}://${host}${ROUTE_PREFIX}/providers/${index}/auth/callback`
+          oauthStates.set(state, { index, entryId: current.id, redirectUri, startedAt: Date.now() })
+          const url = new URL(descriptor.authorizeUrl)
+          url.searchParams.set('response_type', 'code')
+          url.searchParams.set('client_id', clientId)
+          url.searchParams.set('redirect_uri', redirectUri)
+          url.searchParams.set('state', state)
+          if (typeof descriptor.scope === 'string') url.searchParams.set('scope', descriptor.scope)
+          return json(response, 200, { url: url.toString(), redirectUri })
+        }
+
+        // Step two: the provider sends the browser back here with a code.
+        if (request.method === 'GET' && parts[2] === 'auth' && parts[3] === 'callback') {
+          const state = url.searchParams.get('state') ?? ''
+          const code = url.searchParams.get('code') ?? ''
+          const record = oauthStates.get(state)
+          if (record === undefined) return json(response, 400, { error: 'неизвестный или просроченный state', code: 'FILESTORE_BAD_STATE' })
+          oauthStates.delete(state)
+          const descriptor = OAUTH_PROVIDERS[current.type]
+          const clientId = current.options?.clientId
+          const store = credentialsOf()
+          const clientSecret = typeof store?.resolve === 'function'
+            ? (await store.resolve(makeCredentialRef(`${current.id}-client`)).catch(() => undefined))?.value
+            : undefined
+          if (typeof clientSecret !== 'string' || clientSecret === '') {
+            return json(response, 400, { error: 'нет client_secret в credentials', code: 'FILESTORE_NO_CLIENT_SECRET' })
+          }
+          const form = new URLSearchParams({ grant_type: 'authorization_code', code, client_id: clientId, client_secret: clientSecret, redirect_uri: record.redirectUri })
+          const tokenResponse = await fetch(descriptor.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form })
+          const tokenBody = await tokenResponse.json().catch(() => ({}))
+          if (!tokenResponse.ok || typeof tokenBody.access_token !== 'string') {
+            return json(response, 400, { error: tokenBody?.error_description ?? 'провайдер не выдал токен', code: 'FILESTORE_OAUTH_FAILED' })
+          }
+          if (typeof store?.set === 'function') await store.set(current.credentialRef, tokenBody.access_token)
+          response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+          response.end('<!doctype html><meta charset="utf-8"><title>Готово</title><p>Хранилище подключено. Закройте окно и вернитесь в настройки.</p>')
+          return undefined
+        }
+
+        // Manual path: a token pasted by hand, for anyone who cannot run the redirect.
+        if (request.method === 'POST' && parts[2] === 'auth' && parts[3] === 'code') {
+          const body = await readBody(request)
+          const value = String(body?.token ?? '').trim()
+          if (value === '') return json(response, 400, { error: 'пустой токен', code: 'FILESTORE_BAD_REQUEST' })
+          const store = credentialsOf()
+          if (typeof store?.set !== 'function') return json(response, 400, { error: 'сервис секретов недоступен', code: 'FILESTORE_NO_CREDENTIALS' })
+          await store.set(current.credentialRef, value)
+          return json(response, 200, { tokenConfigured: true })
+        }
 
         if (request.method === 'PATCH') {
           const body = await readBody(request)
