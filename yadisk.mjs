@@ -150,7 +150,9 @@ export function createYandexDriver(entry, { resolveSecret, fetchFn = fetch } = {
       const body = data !== null && typeof data === 'object' && typeof data[Symbol.asyncIterator] === 'function'
         ? Buffer.concat(await readStream(data))
         : data
-      const link = await call('PUT', `${api}/resources/upload?path=${encodeURIComponent(pathFor(normalized))}&overwrite=true`)
+      // GET, not PUT: the API hands out the upload link in response to a GET, and
+      // answers 403 Forbidden to anything else. The bytes go to the link itself.
+      const link = await call('GET', `${api}/resources/upload?path=${encodeURIComponent(pathFor(normalized))}&overwrite=true`)
       if (typeof link?.href !== 'string') throw new FilestoreError('FILESTORE_ERROR', 'Яндекс.Диск не выдал ссылку на загрузку')
       const response = await fetchFn(link.href, { method: 'PUT', body })
       if (!response.ok) throw errorForYandex(response, undefined)

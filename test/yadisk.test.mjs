@@ -95,6 +95,12 @@ async function startFakeDisk() {
       return
     }
     if (url.pathname === '/v1/disk/resources/upload') {
+      // Yandex answers the link request to a GET; anything else is a 403, and a
+      // driver that asks with PUT looks like a permissions problem.
+      if (request.method !== 'GET') {
+        response.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ description: 'Forbidden' }))
+        return
+      }
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ href: `http://127.0.0.1:${port}/upload/${encodeURIComponent(path)}` }))
       return
     }
