@@ -172,7 +172,7 @@ var styles = {
   square: { width: 28, height: 28, padding: 0, marginRight: 4, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", borderRadius: 6 },
   icon: { width: 16, height: 16, display: "block" },
   typeIcon: { width: 22, height: 22, marginRight: 8, flex: "0 0 auto" },
-  nameCell: { display: "flex", alignItems: "flex-start", gap: 0 },
+  nameCell: { display: "flex", alignItems: "flex-start", gap: 12 },
   badges: { display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap", maxWidth: 190 },
   buttonColumn: { display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" },
   iconColumn: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: "0 0 auto" },
