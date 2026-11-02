@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-storage
+      name: '@dr-co/dsh-storage'
