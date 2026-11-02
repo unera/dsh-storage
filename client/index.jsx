@@ -236,8 +236,14 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
       setError(t('clientIdNeeded'))
       return
     }
+    // Opened here, while the click is still the user's gesture: a window opened
+    // after an await is a popup and gets blocked. It is pointed at the device page
+    // once the code arrives.
+    const popup = typeof window !== 'undefined' ? window.open('about:blank', '_blank') : null
     try {
       const started = await request('/auth/device/start', { method: 'POST', body: { id: entryId, clientId: clientId.trim(), type } })
+      if (popup !== null && popup.closed !== true) popup.location.href = started.verificationUrl
+      else if (typeof window !== 'undefined') window.open(started.verificationUrl, '_blank', 'noopener')
       setDeviceState(started.state)
       setDevice({ userCode: started.userCode, verificationUrl: started.verificationUrl, status: 'waiting' })
       const intervalMs = Math.max(1000, Number(started.interval ?? 5) * 1000)
@@ -265,6 +271,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
       }
       setTimeout(poll, intervalMs)
     } catch (problem) {
+      if (popup !== null && popup.closed !== true) popup.close()
       setError(problem.message)
     }
   }
@@ -358,7 +365,11 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
           deviceReady ? null : jsx('div', { style: { ...styles.hint, marginTop: 4 }, children: deviceBlockedReason }),
           device === null ? null : jsx('div', { style: { marginTop: 8 }, children: [
             jsx('div', { children: [t('deviceCode'), ': ', jsx('strong', { style: { fontSize: 18, letterSpacing: 2 }, children: device.userCode })] }),
-            jsx('div', { style: styles.hint, children: [t('deviceOpen'), ' ', jsx('a', { href: device.verificationUrl, target: '_blank', rel: 'noreferrer', children: device.verificationUrl })] }),
+            jsx('div', { style: { ...styles.hint, display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }, children: [
+              t('deviceOpen'),
+              jsx('a', { href: device.verificationUrl, target: '_blank', rel: 'noreferrer', children: device.verificationUrl }),
+              jsx('button', { style: styles.button, onClick: () => window.open(device.verificationUrl, '_blank', 'noopener'), children: t('deviceOpenButton') }),
+            ] }),
             jsx('div', { style: styles.hint, children: device.status === 'ok' ? t('deviceDone') : device.status === 'error' ? `${t('failed')}: ${device.error}` : t('deviceWaiting') }),
           ] }),
         ] }),

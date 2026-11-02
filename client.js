@@ -62,6 +62,7 @@ var DICTIONARIES = {
     "deviceConnect": "Connect with a code",
     "deviceCode": "Code",
     "deviceOpen": "Open and enter it:",
+    "deviceOpenButton": "Open",
     "deviceWaiting": "Waiting for confirmation\u2026",
     "deviceDone": "Connected. The token is stored on the host.",
     "deviceSaveFirst": "Save the storage first, then connect it by code",
@@ -122,6 +123,7 @@ var DICTIONARIES = {
     "deviceConnect": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u043F\u043E \u043A\u043E\u0434\u0443",
     "deviceCode": "\u041A\u043E\u0434",
     "deviceOpen": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0438 \u0432\u0432\u0435\u0434\u0438\u0442\u0435:",
+    "deviceOpenButton": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C",
     "deviceWaiting": "\u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F\u2026",
     "deviceDone": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u043E. \u0422\u043E\u043A\u0435\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D \u043D\u0430 \u0445\u043E\u0441\u0442\u0435.",
     "deviceSaveFirst": "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435, \u043F\u043E\u0442\u043E\u043C \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u0439\u0442\u0435 \u043F\u043E \u043A\u043E\u0434\u0443",
@@ -354,8 +356,11 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
       setError(t("clientIdNeeded"));
       return;
     }
+    const popup = typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
     try {
       const started = await request("/auth/device/start", { method: "POST", body: { id: entryId, clientId: clientId.trim(), type } });
+      if (popup !== null && popup.closed !== true) popup.location.href = started.verificationUrl;
+      else if (typeof window !== "undefined") window.open(started.verificationUrl, "_blank", "noopener");
       setDeviceState(started.state);
       setDevice({ userCode: started.userCode, verificationUrl: started.verificationUrl, status: "waiting" });
       const intervalMs = Math.max(1e3, Number(started.interval ?? 5) * 1e3);
@@ -383,6 +388,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
       };
       setTimeout(poll, intervalMs);
     } catch (problem) {
+      if (popup !== null && popup.closed !== true) popup.close();
       setError(problem.message);
     }
   };
@@ -469,7 +475,11 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         deviceReady ? null : (0, import_jsx_runtime.jsx)("div", { style: { ...styles.hint, marginTop: 4 }, children: deviceBlockedReason }),
         device === null ? null : (0, import_jsx_runtime.jsx)("div", { style: { marginTop: 8 }, children: [
           (0, import_jsx_runtime.jsx)("div", { children: [t("deviceCode"), ": ", (0, import_jsx_runtime.jsx)("strong", { style: { fontSize: 18, letterSpacing: 2 }, children: device.userCode })] }),
-          (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: [t("deviceOpen"), " ", (0, import_jsx_runtime.jsx)("a", { href: device.verificationUrl, target: "_blank", rel: "noreferrer", children: device.verificationUrl })] }),
+          (0, import_jsx_runtime.jsx)("div", { style: { ...styles.hint, display: "flex", alignItems: "center", gap: 6, marginTop: 4 }, children: [
+            t("deviceOpen"),
+            (0, import_jsx_runtime.jsx)("a", { href: device.verificationUrl, target: "_blank", rel: "noreferrer", children: device.verificationUrl }),
+            (0, import_jsx_runtime.jsx)("button", { style: styles.button, onClick: () => window.open(device.verificationUrl, "_blank", "noopener"), children: t("deviceOpenButton") })
+          ] }),
           (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: device.status === "ok" ? t("deviceDone") : device.status === "error" ? `${t("failed")}: ${device.error}` : t("deviceWaiting") })
         ] })
       ] }),
