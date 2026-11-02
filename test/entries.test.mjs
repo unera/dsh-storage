@@ -49,3 +49,12 @@ test('every supported type survives normalization', () => {
 test('a bad base path is refused at normalization time', () => {
   assert.throws(() => normalizeEntries([{ id: 'st-0001', type: 'local', basePath: '../escape' }]), /cannot contain/)
 })
+
+test('the providers field is volatile, or the host cannot save settings', async () => {
+  const { Config } = await import('../index.mjs')
+  // dsh-settings persists only fields under a volatile node; without the mark
+  // every settings write throws and takes the host process down with it.
+  const providers = Config.dict?.providers
+  assert.notEqual(providers, undefined, 'providers must stay in the config schema')
+  assert.equal(providers.meta?.volatile, true, 'providers must be marked volatile()')
+})

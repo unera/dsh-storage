@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto'
 // cycle is harmless because neither module touches the other at evaluation time,
 // and the host half is shipped as plain ESM, never bundled.
 import { createS3Driver } from './s3.mjs'
+import { createWebdavDriver } from './webdav.mjs'
 
 /** Stable Loader identity. */
 export const name = 'dsh-storage'
@@ -52,7 +53,7 @@ export const MAX_READ_BYTES = 256 * 1024
 export const KEEP_FILE = '.dsh-storage-keep'
 
 /** Driver types this build can actually run. */
-export const PROVIDER_TYPES = Object.freeze(['local', 's3'])
+export const PROVIDER_TYPES = Object.freeze(['local', 's3', 'webdav'])
 
 /**
  * What each type can do. The UI asks before drawing a button, and the host
@@ -64,6 +65,9 @@ export const CAPABILITIES = Object.freeze({
   }),
   s3: Object.freeze({
     put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: false,
+  }),
+  webdav: Object.freeze({
+    put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
   }),
 })
 
@@ -403,7 +407,7 @@ export function createLocalDriver(entry) {
 }
 
 /** Everything a driver registry needs to know about each type. */
-export const DRIVERS = Object.freeze({ local: createLocalDriver, s3: createS3Driver })
+export const DRIVERS = Object.freeze({ local: createLocalDriver, s3: createS3Driver, webdav: createWebdavDriver })
 
 /** Map a Node fs error onto the storage vocabulary. */
 export function toFilestoreError(error) {

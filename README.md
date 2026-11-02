@@ -13,12 +13,14 @@ from and write to, and later the same storages carry full backups.
 - драйвер `s3` — любой S3-совместимый сервис (AWS, Яндекс Object Storage,
   Selectel, VK, R2, B2, MinIO) на голом `fetch` с SigV4 из `node:crypto`,
   многочастная загрузка для больших файлов, без AWS SDK;
+- драйвер `webdav` — Nextcloud, ownCloud, NAS: PROPFIND для листинга и stat,
+  PUT/GET/DELETE/MKCOL, квота через RFC 4331, если сервер её отдаёт;
 - инструменты модели: `storage_list`, `storage_ls`, `storage_read`,
   `storage_write`, `storage_mkdir`, `storage_df`, `storage_delete`;
 - секция системного промпта `tool:filestore` (статическая — кэш промпта живёт);
 - настройки в namespace `dsh-storage` и админ-API `/__fs`.
 
-Чего нет: драйвера `webdav`, клиентской панели в настройках, OAuth-провайдеров
+Чего нет: OAuth-провайдеров
 (Google, Яндекс.Диск, Dropbox), `rclone`, `sftp`. Всё это — следующие коммиты,
 по плану из спеки.
 
@@ -86,6 +88,20 @@ dsh plugin --profile web add @dr-co/dsh-storage
 | DELETE | `/__fs/providers/:index` | удалить (основное — только после смены основного) |
 | POST | `/__fs/providers/:index/test` | проверка: запись → чтение → удаление пробника |
 | POST | `/__fs/providers/:index/primary` | назначить основным |
+
+## WebDAV
+
+`options.baseUrl` — адрес коллекции, например
+`https://cloud.example/remote.php/dav/files/user`. Секрет в credentials: JSON
+`{"username": "…", "password": "…"}`, либо `user:password` одной строкой, либо
+две строки. Пароль приложения лучше обычного пароля.
+
+## Ловушка, которая роняет хост
+
+Поле конфига, которое меняется из панели, обязано быть `.volatile()`:
+`dsh-settings` отказывается писать не-volatile поля и кидает
+`Plugin entry "<id>" has no volatile fields`, а это валит процесс целиком.
+Читается такое поле через `get()`, а не как массив. Есть тест, который это ловит.
 
 ## Ключи
 
