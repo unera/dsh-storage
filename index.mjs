@@ -959,6 +959,12 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           const store = credentialsOf()
           if (typeof store?.set === 'function') await store.set(candidate.credentialRef, String(body.secret))
         }
+        // OAuth applications also need their own secret, kept separately from the
+        // token: one belongs to the app, the other to the user.
+        if (body?.clientSecret !== undefined && String(body.clientSecret) !== '') {
+          const store = credentialsOf()
+          if (typeof store?.set === 'function') await store.set(makeCredentialRef(`${candidate.id}-client`), String(body.clientSecret))
+        }
         const next = [...providers, { ...candidate }]
         if (body?.role === 'primary') for (const entry of next) if (entry.id !== candidate.id) entry.role = 'secondary'
         write(next)
@@ -1206,6 +1212,10 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           if (body?.secret !== undefined && String(body.secret) !== '') {
             const store = credentialsOf()
             if (typeof store?.set === 'function') await store.set(current.credentialRef, String(body.secret))
+          }
+          if (body?.clientSecret !== undefined && String(body.clientSecret) !== '') {
+            const store = credentialsOf()
+            if (typeof store?.set === 'function') await store.set(makeCredentialRef(`${current.id}-client`), String(body.clientSecret))
           }
           const merged = normalizeEntry({ ...current, ...body, id: current.id }, index)
           if (merged === undefined) return json(response, 400, { error: 'unknown storage type', code: 'FILESTORE_UNSUPPORTED' })

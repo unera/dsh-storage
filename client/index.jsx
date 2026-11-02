@@ -185,6 +185,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [clientId, setClientId] = useState(initial?.options?.clientId ?? '')
+  const [clientSecret, setClientSecret] = useState('')
   const [token, setToken] = useState('')
   const [device, setDevice] = useState(null)
   const [deviceState, setDeviceState] = useState(null)
@@ -288,6 +289,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         readOnly,
         options: optionsFor(),
         ...(secretFor() === undefined ? {} : { secret: secretFor() }),
+        ...(clientSecret.trim() === '' ? {} : { clientSecret: clientSecret.trim() }),
       }
       if (editing) await request(`/providers/${initial.index}`, { method: 'PATCH', body: payload })
       else await request('/providers', { method: 'POST', body: { ...payload, type, id: entryId } })
@@ -350,6 +352,11 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
             jsx('span', { children: t('clientId') }),
             jsx('input', { style: styles.input, value: clientId, placeholder: 'идентификатор приложения', onChange: event => setClientId(event.target.value) }),
             jsx('span', { style: styles.hint, children: t('clientIdHint') }),
+          ] }),
+          jsx('label', { style: styles.field, children: [
+            jsx('span', { children: t('clientSecret') }),
+            jsx('input', { style: styles.input, type: 'password', value: clientSecret, autoComplete: 'new-password', onChange: event => setClientSecret(event.target.value) }),
+            jsx('span', { style: styles.hint, children: editing ? t('secretKeep') : t('clientSecretHint') }),
           ] }),
         ] }),
         jsx('div', { style: { margin: '4px 0 12px' }, children: [

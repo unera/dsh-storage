@@ -150,3 +150,32 @@ test('the handshake works before the entry is saved, and the id survives the sav
     await ctx.stop?.()
   }
 })
+
+test('the application secret is stored apart from the token and sent on exchange', async () => {
+  deviceStates.clear()
+  const { ctx, handler, record } = await boot([])
+  const seen = []
+  const original = oauthTransport.fetch
+  oauthTransport.fetch = async (url, init) => {
+    seen.push(String(init?.body ?? ''))
+    return String(url).includes('/device/code')
+      ? new Response(JSON.stringify({ device_code: 'dev-3', user_code: 'bbbb2222', verification_url: 'https://oauth.yandex.com/device', interval: 1, expires_in: 60 }), { status: 200 })
+      : new Response(JSON.stringify({ access_token: 'tok-3' }), { status: 200 })
+  }
+  try {
+    // The panel saves the secret with the entry, not with the handshake.
+    await call(handler, { method: 'POST', url: '/__fs/providers', body: { id: 'st-efgh', type: 'yadisk', options: { clientId: 'app-3' }, clientSecret: 'sec-3' } })
+    assert.equal(record.stored.get('DSH_FILESTORE_ST_EFGH_CLIENT'), 'sec-3')
+
+    const started = await call(handler, { method: 'POST', url: '/__fs/auth/device/start', body: { id: 'st-efgh', clientId: 'app-3', type: 'yadisk' } })
+    const recordState = deviceStates.get(started.body.state)
+    recordState.lastPollAt = 0
+    const confirmed = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+    assert.equal(confirmed.body.status, 'ok')
+    assert.match(seen.at(-1), /client_secret=sec-3/)
+    assert.equal(record.stored.get('DSH_FILESTORE_ST_EFGH'), 'tok-3')
+  } finally {
+    oauthTransport.fetch = original
+    await ctx.stop?.()
+  }
+})

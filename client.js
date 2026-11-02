@@ -57,6 +57,8 @@ var DICTIONARIES = {
     "passwordHint": "App password is better than the account password",
     "clientId": "Application id",
     "clientIdHint": "From the app registered at oauth.yandex.ru",
+    "clientSecret": "Application secret",
+    "clientSecretHint": "The app secret from oauth.yandex.com; it stays in the credential store",
     "clientIdNeeded": "This button needs the application id: Yandex will not hand out a device code without it. Register an app at oauth.yandex.com, copy its ClientID into the field above, and press again.",
     "token": "OAuth token",
     "deviceConnect": "Connect with a code",
@@ -118,6 +120,8 @@ var DICTIONARIES = {
     "passwordHint": "\u041B\u0443\u0447\u0448\u0435 \u043F\u0430\u0440\u043E\u043B\u044C \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F, \u0447\u0435\u043C \u043F\u0430\u0440\u043E\u043B\u044C \u043E\u0442 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430",
     "clientId": "\u0418\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F",
     "clientIdHint": "\u0418\u0437 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F, \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u043E\u0433\u043E \u043D\u0430 oauth.yandex.ru",
+    "clientSecret": "\u0421\u0435\u043A\u0440\u0435\u0442 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F",
+    "clientSecretHint": "Secret \u0438\u0437 \u0441\u0432\u043E\u0439\u0441\u0442\u0432 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043D\u0430 oauth.yandex.com; \u0445\u0440\u0430\u043D\u0438\u0442\u0441\u044F \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u0441\u0435\u043A\u0440\u0435\u0442\u043E\u0432",
     "clientIdNeeded": "\u041A\u043D\u043E\u043F\u043A\u0435 \u043D\u0443\u0436\u0435\u043D \u0438\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F: \u0431\u0435\u0437 \u043D\u0435\u0433\u043E \u042F\u043D\u0434\u0435\u043A\u0441 \u043D\u0435 \u0432\u044B\u0434\u0430\u0451\u0442 \u043A\u043E\u0434 \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430. \u0417\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u0443\u0439\u0442\u0435 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u0435 \u043D\u0430 oauth.yandex.com, \u0432\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u0435\u0433\u043E ClientID \u0432 \u043F\u043E\u043B\u0435 \u0432\u044B\u0448\u0435 \u0438 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \u0441\u043D\u043E\u0432\u0430.",
     "token": "OAuth-\u0442\u043E\u043A\u0435\u043D",
     "deviceConnect": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u043F\u043E \u043A\u043E\u0434\u0443",
@@ -324,6 +328,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const [username, setUsername] = (0, import_react.useState)("");
   const [password, setPassword] = (0, import_react.useState)("");
   const [clientId, setClientId] = (0, import_react.useState)(initial?.options?.clientId ?? "");
+  const [clientSecret, setClientSecret] = (0, import_react.useState)("");
   const [token, setToken] = (0, import_react.useState)("");
   const [device, setDevice] = (0, import_react.useState)(null);
   const [deviceState, setDeviceState] = (0, import_react.useState)(null);
@@ -403,7 +408,8 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         enabled,
         readOnly,
         options: optionsFor(),
-        ...secretFor() === void 0 ? {} : { secret: secretFor() }
+        ...secretFor() === void 0 ? {} : { secret: secretFor() },
+        ...clientSecret.trim() === "" ? {} : { clientSecret: clientSecret.trim() }
       };
       if (editing) await request(`/providers/${initial.index}`, { method: "PATCH", body: payload });
       else await request("/providers", { method: "POST", body: { ...payload, type, id: entryId } });
@@ -460,6 +466,11 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
           (0, import_jsx_runtime.jsx)("span", { children: t("clientId") }),
           (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: clientId, placeholder: "\u0438\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F", onChange: (event) => setClientId(event.target.value) }),
           (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("clientIdHint") })
+        ] }),
+        (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+          (0, import_jsx_runtime.jsx)("span", { children: t("clientSecret") }),
+          (0, import_jsx_runtime.jsx)("input", { style: styles.input, type: "password", value: clientSecret, autoComplete: "new-password", onChange: (event) => setClientSecret(event.target.value) }),
+          (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: editing ? t("secretKeep") : t("clientSecretHint") })
         ] })
       ] }),
       (0, import_jsx_runtime.jsx)("div", { style: { margin: "4px 0 12px" }, children: [
