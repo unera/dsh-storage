@@ -23,6 +23,10 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { createHash } from 'node:crypto'
+// Imported at the top even though `s3.mjs` imports primitives back from here: the
+// cycle is harmless because neither module touches the other at evaluation time,
+// and the host half is shipped as plain ESM, never bundled.
+import { createS3Driver } from './s3.mjs'
 
 /** Stable Loader identity. */
 export const name = 'dsh-storage'
@@ -48,7 +52,7 @@ export const MAX_READ_BYTES = 256 * 1024
 export const KEEP_FILE = '.dsh-storage-keep'
 
 /** Driver types this build can actually run. */
-export const PROVIDER_TYPES = Object.freeze(['local'])
+export const PROVIDER_TYPES = Object.freeze(['local', 's3'])
 
 /**
  * What each type can do. The UI asks before drawing a button, and the host
@@ -57,6 +61,9 @@ export const PROVIDER_TYPES = Object.freeze(['local'])
 export const CAPABILITIES = Object.freeze({
   local: Object.freeze({
     put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
+  }),
+  s3: Object.freeze({
+    put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: false,
   }),
 })
 
@@ -396,7 +403,7 @@ export function createLocalDriver(entry) {
 }
 
 /** Everything a driver registry needs to know about each type. */
-export const DRIVERS = Object.freeze({ local: createLocalDriver })
+export const DRIVERS = Object.freeze({ local: createLocalDriver, s3: createS3Driver })
 
 /** Map a Node fs error onto the storage vocabulary. */
 export function toFilestoreError(error) {
@@ -429,6 +436,8 @@ export class Filestore extends Service {
     this.source = () => []
     /** @type {Map<string, object>} */
     this.statusCache = new Map()
+    /** @type {() => object | null} */
+    this.secretSource = () => null
   }
 
   /** Entries as the host sees them, without secrets. */
@@ -460,7 +469,14 @@ export class Filestore extends Service {
     if (!entry.enabled) throw new FilestoreError('FILESTORE_DISABLED', `storage ${entry.id} is disabled`)
     const factory = DRIVERS[entry.type]
     if (factory === undefined) throw new FilestoreError('FILESTORE_UNSUPPORTED', `storage type ${entry.type} is not available`)
-    return factory(entry)
+    // A secret is resolved per call, never captured: the credentials service may
+    // mount after the driver is built, and a captured null never recovers.
+    const resolveSecret = async () => {
+      const store = this.secretSource()
+      if (store === null || typeof store.resolve !== 'function') return undefined
+      return store.resolve(entry.credentialRef)
+    }
+    return factory(entry, { resolveSecret })
   }
 
   /** Last known status; never touches the network. */
@@ -923,6 +939,7 @@ export function apply(ctx, config = {}) {
   })
   ctx.inject(['credentials'], child => {
     shared.credentials = child.credentials
+    filestore.secretSource = () => shared.credentials
   })
 
   filestore.source = () => {

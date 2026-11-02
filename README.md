@@ -10,14 +10,33 @@ from and write to, and later the same storages carry full backups.
 - сервис `ctx.filestore`: список хранилищ, основное, статусы, `test()`;
 - драйвер `local` (каталог на этом хосте) — `put`, `get`, `list`, `stat`,
   `delete`, `mkdir`, `free`, `put_file` / `get_file` для больших файлов;
+- драйвер `s3` — любой S3-совместимый сервис (AWS, Яндекс Object Storage,
+  Selectel, VK, R2, B2, MinIO) на голом `fetch` с SigV4 из `node:crypto`,
+  многочастная загрузка для больших файлов, без AWS SDK;
 - инструменты модели: `storage_list`, `storage_ls`, `storage_read`,
   `storage_write`, `storage_mkdir`, `storage_df`, `storage_delete`;
 - секция системного промпта `tool:filestore` (статическая — кэш промпта живёт);
 - настройки в namespace `dsh-storage` и админ-API `/__fs`.
 
-Чего нет: драйверов `s3` и `webdav`, клиентской панели в настройках, OAuth.
-Всё это — следующие коммиты, по плану в `docs/dsh-storage-spec.md` рабочего
-репозитория.
+Чего нет: драйвера `webdav`, клиентской панели в настройках, OAuth-провайдеров
+(Google, Яндекс.Диск, Dropbox), `rclone`, `sftp`. Всё это — следующие коммиты,
+по плану из спеки.
+
+## S3
+
+`options`: `bucket` (обязательно), `region` (по умолчанию `us-east-1`),
+`endpoint` (для не-AWS; путь будет path-style, `forcePathStyle: false` переключает
+на virtual-host), `partSize` (по умолчанию 8 МиБ; настоящий S3 требует не меньше
+5 МиБ на часть, кроме последней).
+
+Секрет лежит в credentials под `credentialRef` и принимается в одном из видов:
+
+```json
+{"accessKeyId": "…", "secretAccessKey": "…"}
+```
+
+либо `keyId:secret` одной строкой, либо двумя строками. Ключ доступа — это тоже
+секрет, поэтому оба значения живут в creds, а не в `options`.
 
 ## Установка
 
