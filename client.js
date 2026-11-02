@@ -242,6 +242,21 @@ function bytes(value) {
   }
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
+function LineField({ value, onChange, placeholder, spellCheck = false }) {
+  return (0, import_jsx_runtime.jsx)("textarea", {
+    rows: 1,
+    value,
+    placeholder,
+    spellCheck,
+    autoComplete: "off",
+    autoCorrect: "off",
+    autoCapitalize: "off",
+    "data-lpignore": "true",
+    "data-1p-ignore": "true",
+    onChange: (event) => onChange(event.target.value),
+    style: { ...styles.input, height: 30, minHeight: 30, resize: "none", overflow: "hidden", whiteSpace: "pre", fontFamily: "inherit" }
+  });
+}
 function IconButton({ icon, title, onClick, disabled, tone }) {
   return (0, import_jsx_runtime.jsx)("button", {
     style: { ...styles.square, ...tone === void 0 ? {} : tone },
@@ -465,12 +480,12 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
       (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
         (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
           (0, import_jsx_runtime.jsx)("span", { children: t("clientId") }),
-          (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: clientId, placeholder: "\u0438\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F", onChange: (event) => setClientId(event.target.value) }),
+          (0, import_jsx_runtime.jsx)(LineField, { value: clientId, placeholder: "\u0438\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F", onChange: setClientId }),
           (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("clientIdHint") })
         ] }),
         (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
           (0, import_jsx_runtime.jsx)("span", { children: t("clientSecret") }),
-          (0, import_jsx_runtime.jsx)("input", { style: styles.input, type: "password", value: clientSecret, autoComplete: "new-password", onChange: (event) => setClientSecret(event.target.value) }),
+          (0, import_jsx_runtime.jsx)(LineField, { value: clientSecret, onChange: setClientSecret }),
           (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: editing ? t("secretKeep") : t("clientSecretHint") })
         ] })
       ] }),

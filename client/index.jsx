@@ -89,6 +89,27 @@ function bytes(value) {
 }
 
 /** One row of the storages table. */
+/**
+ * A one-line field built on `textarea`. Password managers key off `input` with
+ * a password type or an autocomplete hint and keep offering to fill these in;
+ * a textarea with rows=1 takes the same text and stays out of their way.
+ */
+function LineField({ value, onChange, placeholder, spellCheck = false }) {
+  return jsx('textarea', {
+    rows: 1,
+    value,
+    placeholder,
+    spellCheck,
+    autoComplete: 'off',
+    autoCorrect: 'off',
+    autoCapitalize: 'off',
+    'data-lpignore': 'true',
+    'data-1p-ignore': 'true',
+    onChange: event => onChange(event.target.value),
+    style: { ...styles.input, height: 30, minHeight: 30, resize: 'none', overflow: 'hidden', whiteSpace: 'pre', fontFamily: 'inherit' },
+  })
+}
+
 /** One square, icon-only button; the word lives in the tooltip. */
 function IconButton({ icon, title, onClick, disabled, tone }) {
   return jsx('button', {
@@ -353,12 +374,12 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         jsx('div', { style: styles.row, children: [
           jsx('label', { style: styles.field, children: [
             jsx('span', { children: t('clientId') }),
-            jsx('input', { style: styles.input, value: clientId, placeholder: 'идентификатор приложения', onChange: event => setClientId(event.target.value) }),
+            jsx(LineField, { value: clientId, placeholder: 'идентификатор приложения', onChange: setClientId }),
             jsx('span', { style: styles.hint, children: t('clientIdHint') }),
           ] }),
           jsx('label', { style: styles.field, children: [
             jsx('span', { children: t('clientSecret') }),
-            jsx('input', { style: styles.input, type: 'password', value: clientSecret, autoComplete: 'new-password', onChange: event => setClientSecret(event.target.value) }),
+            jsx(LineField, { value: clientSecret, onChange: setClientSecret }),
             jsx('span', { style: styles.hint, children: editing ? t('secretKeep') : t('clientSecretHint') }),
           ] }),
         ] }),
