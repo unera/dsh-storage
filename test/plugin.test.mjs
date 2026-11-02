@@ -214,3 +214,11 @@ test('a resolved credential object reaches the driver as its value', async () =>
     await ctx.stop?.()
   }
 })
+
+test('storage_read puts the file content into the render', () => {
+  const tools = createStorageTools({ entries: () => [], status: () => ({}), driver: () => ({}) })
+  const read = tools.find(tool => tool.name === 'storage_read')
+  const blocks = read.output.render({ key: 'a.txt' }, { storage: 'st-0001', key: 'a.txt', content: 'тело файла', size: 20 })
+  assert.equal(blocks.length, 1)
+  assert.match(blocks[0].text, /тело файла/, 'the model only sees the render, so the content must be in it')
+})

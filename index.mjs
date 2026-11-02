@@ -588,7 +588,12 @@ export const RENDERERS = {
     const names = value.items.slice(0, 20).map(item => item.key).join('\n')
     return [{ type: 'text', text: `${value.storage}: ${value.items.length} объект(ов) в ${where}${value.truncated === true ? ' (список обрезан)' : ''}${value.items.length === 0 ? '' : `\n${names}`}` }]
   },
-  storage_read: (_args, value) => [{ type: 'text', text: `${value.storage}: ${value.key}, ${humanBytes(value.size)}${value.truncated === true ? ', прочитано начало' : ''}` }],
+  // The render IS what the model reads: a summary line alone would make
+  // `storage_read` useless, because the bytes never reach the conversation.
+  storage_read: (_args, value) => [{
+    type: 'text',
+    text: `${value.storage}: ${value.key}, ${humanBytes(value.size)}${value.truncated === true ? ' — прочитано только начало (файл больше 256 КиБ)' : ''}\n\n${value.content}`,
+  }],
   storage_write: (_args, value) => [{ type: 'text', text: `Записано ${value.key} в ${value.storage}, ${humanBytes(value.size)}${value.sha256 === undefined ? '' : `, sha256 ${value.sha256.slice(0, 12)}…`}` }],
   storage_mkdir: (_args, value) => [{ type: 'text', text: `Создан каталог ${value.key} в ${value.storage} (${value.medium === 'marker' ? 'маркер, у носителя нет каталогов' : 'настоящий каталог'})` }],
   storage_df: (_args, value) => [{
