@@ -213,6 +213,15 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
     return secret.trim() === '' ? undefined : secret.trim()
   }
 
+  // The device flow lives on a saved entry: the host needs an entry to attach the
+  // token to and a client id to name. Say so instead of leaving a dead button.
+  const deviceReady = editing && clientId.trim() !== ''
+  const deviceBlockedReason = !editing
+    ? t('deviceSaveFirst')
+    : clientId.trim() === ''
+      ? t('clientIdHint')
+      : ''
+
   /**
    * Device flow: ask the host for a user code, show it, then poll the host until
    * the provider says the code was confirmed. The token never passes through the
@@ -332,11 +341,14 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         jsx('div', { style: { margin: '4px 0 12px' }, children: [
           jsx('button', {
             style: styles.button,
-            disabled: busy || clientId.trim() === '' || device?.status === 'waiting',
-            title: clientId.trim() === '' ? t('clientIdHint') : t('deviceConnect'),
+            disabled: busy || !deviceReady || device?.status === 'waiting',
+            title: deviceReady ? t('deviceConnect') : deviceBlockedReason,
             onClick: startDevice,
             children: t('deviceConnect'),
           }),
+          // Why the button does nothing, in words instead of a tooltip: a greyed
+          // button with a hidden reason reads as broken.
+          deviceReady ? null : jsx('div', { style: { ...styles.hint, marginTop: 4 }, children: deviceBlockedReason }),
           device === null ? null : jsx('div', { style: { marginTop: 8 }, children: [
             jsx('div', { children: [t('deviceCode'), ': ', jsx('strong', { style: { fontSize: 18, letterSpacing: 2 }, children: device.userCode })] }),
             jsx('div', { style: styles.hint, children: [t('deviceOpen'), ' ', jsx('a', { href: device.verificationUrl, target: '_blank', rel: 'noreferrer', children: device.verificationUrl })] }),

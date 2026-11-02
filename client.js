@@ -63,6 +63,8 @@ var DICTIONARIES = {
     "deviceOpen": "Open and enter it:",
     "deviceWaiting": "Waiting for confirmation\u2026",
     "deviceDone": "Connected. The token is stored on the host.",
+    "deviceSaveFirst": "Save the storage first, then connect it by code",
+    "tokenHint": "Paste a token if you already have one; otherwise use the code above",
     "type": "Type",
     "label": "Name",
     "labelPlaceholder": "My files",
@@ -120,6 +122,8 @@ var DICTIONARIES = {
     "deviceOpen": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0438 \u0432\u0432\u0435\u0434\u0438\u0442\u0435:",
     "deviceWaiting": "\u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F\u2026",
     "deviceDone": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u043E. \u0422\u043E\u043A\u0435\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D \u043D\u0430 \u0445\u043E\u0441\u0442\u0435.",
+    "deviceSaveFirst": "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435, \u043F\u043E\u0442\u043E\u043C \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u0439\u0442\u0435 \u043F\u043E \u043A\u043E\u0434\u0443",
+    "tokenHint": "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u0442\u043E\u043A\u0435\u043D, \u0435\u0441\u043B\u0438 \u043E\u043D \u0443 \u0432\u0430\u0441 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C; \u0438\u043D\u0430\u0447\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439\u0442\u0435 \u043A\u043E\u0434 \u0432\u044B\u0448\u0435",
     "type": "\u0422\u0438\u043F",
     "label": "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435",
     "labelPlaceholder": "\u041C\u043E\u0438 \u0444\u0430\u0439\u043B\u044B",
@@ -337,6 +341,8 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
     if (type === "yadisk") return token.trim() === "" ? void 0 : token.trim();
     return secret.trim() === "" ? void 0 : secret.trim();
   };
+  const deviceReady = editing && clientId.trim() !== "";
+  const deviceBlockedReason = !editing ? t("deviceSaveFirst") : clientId.trim() === "" ? t("clientIdHint") : "";
   const startDevice = async () => {
     setError(null);
     try {
@@ -444,11 +450,14 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
       (0, import_jsx_runtime.jsx)("div", { style: { margin: "4px 0 12px" }, children: [
         (0, import_jsx_runtime.jsx)("button", {
           style: styles.button,
-          disabled: busy || clientId.trim() === "" || device?.status === "waiting",
-          title: clientId.trim() === "" ? t("clientIdHint") : t("deviceConnect"),
+          disabled: busy || !deviceReady || device?.status === "waiting",
+          title: deviceReady ? t("deviceConnect") : deviceBlockedReason,
           onClick: startDevice,
           children: t("deviceConnect")
         }),
+        // Why the button does nothing, in words instead of a tooltip: a greyed
+        // button with a hidden reason reads as broken.
+        deviceReady ? null : (0, import_jsx_runtime.jsx)("div", { style: { ...styles.hint, marginTop: 4 }, children: deviceBlockedReason }),
         device === null ? null : (0, import_jsx_runtime.jsx)("div", { style: { marginTop: 8 }, children: [
           (0, import_jsx_runtime.jsx)("div", { children: [t("deviceCode"), ": ", (0, import_jsx_runtime.jsx)("strong", { style: { fontSize: 18, letterSpacing: 2 }, children: device.userCode })] }),
           (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: [t("deviceOpen"), " ", (0, import_jsx_runtime.jsx)("a", { href: device.verificationUrl, target: "_blank", rel: "noreferrer", children: device.verificationUrl })] }),
