@@ -259,6 +259,9 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
           if (answer.status === 'ok') {
             setDevice(current => current === null ? null : { ...current, status: 'ok' })
             setToken('')
+            // The token lives on the host and is never printed. Re-read the list so
+            // the row shows that a secret is configured.
+            await load()
             return
           }
           if (answer.status === 'pending') {
