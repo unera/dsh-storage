@@ -67,9 +67,10 @@ var DICTIONARIES = {
     "deviceOpenLink": "here",
     "deviceOpenButton": "Open the page",
     "deviceCopy": "Copy the code to the clipboard",
+    "checking": "Checking\u2026",
     "deviceCopied": "copied",
     "deviceWaiting": "Waiting for confirmation\u2026",
-    "deviceDone": "Connected. The token is stored on the host and never shown \u2014 press Check to confirm access.",
+    "deviceDone": "Connected. The token is stored on the host and never shown \u2014 press Check in the list to confirm access.",
     "deviceSaveFirst": "Save the storage first, then connect it by code",
     "deviceDoneUnsaved": "Connected. The token is on the host \u2014 press Save so the entry appears in the list.",
     "tokenHint": "Paste a token if you already have one; otherwise use the code above",
@@ -135,9 +136,10 @@ var DICTIONARIES = {
     "deviceOpenLink": "\u0437\u0434\u0435\u0441\u044C",
     "deviceOpenButton": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443",
     "deviceCopy": "\u0421\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043E\u0434 \u0432 \u0431\u0443\u0444\u0435\u0440 \u043E\u0431\u043C\u0435\u043D\u0430",
+    "checking": "\u041F\u0440\u043E\u0432\u0435\u0440\u044F\u0435\u043C\u2026",
     "deviceCopied": "\u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u043E",
     "deviceWaiting": "\u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F\u2026",
-    "deviceDone": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u043E. \u0422\u043E\u043A\u0435\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D \u043D\u0430 \u0445\u043E\u0441\u0442\u0435 \u0438 \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C\xBB, \u0447\u0442\u043E\u0431\u044B \u0443\u0431\u0435\u0434\u0438\u0442\u044C\u0441\u044F.",
+    "deviceDone": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u043E. \u0422\u043E\u043A\u0435\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D \u043D\u0430 \u0445\u043E\u0441\u0442\u0435 \u0438 \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C\xBB \u0432 \u0441\u043F\u0438\u0441\u043A\u0435, \u0447\u0442\u043E\u0431\u044B \u0443\u0431\u0435\u0434\u0438\u0442\u044C\u0441\u044F.",
     "deviceSaveFirst": "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435, \u043F\u043E\u0442\u043E\u043C \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u0439\u0442\u0435 \u043F\u043E \u043A\u043E\u0434\u0443",
     "deviceDoneUnsaved": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u043E. \u0422\u043E\u043A\u0435\u043D \u0443\u0436\u0435 \u043D\u0430 \u0445\u043E\u0441\u0442\u0435 \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C\xBB, \u0447\u0442\u043E\u0431\u044B \u0437\u0430\u043F\u0438\u0441\u044C \u043F\u043E\u044F\u0432\u0438\u043B\u0430\u0441\u044C \u0432 \u0441\u043F\u0438\u0441\u043A\u0435.",
     "tokenHint": "\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u0442\u043E\u043A\u0435\u043D, \u0435\u0441\u043B\u0438 \u043E\u043D \u0443 \u0432\u0430\u0441 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C; \u0438\u043D\u0430\u0447\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439\u0442\u0435 \u043A\u043E\u0434 \u0432\u044B\u0448\u0435",
@@ -223,6 +225,15 @@ var styles = {
   pillGrey: { background: "rgba(128,128,128,0.28)" },
   pillBad: { background: "rgba(220,80,70,0.28)" },
   pillFree: { background: "rgba(70,130,220,0.30)" },
+  spinner: {
+    display: "inline-block",
+    width: 10,
+    height: 10,
+    border: "2px solid rgba(200,200,200,0.45)",
+    borderTopColor: "rgba(240,240,240,0.95)",
+    borderRadius: "50%",
+    animation: "dsh-storage-spin 0.9s linear infinite"
+  },
   form: { border: "1px solid rgba(128,128,128,0.3)", borderRadius: 8, padding: 12, marginTop: 8 },
   row: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8 },
   field: { display: "flex", flexDirection: "column", gap: 4, minWidth: 220, flex: "1 1 220px" },
@@ -281,7 +292,7 @@ function IconButton({ icon, title, onClick, disabled, tone }) {
 function Pill({ children, tone, hint }) {
   return (0, import_jsx_runtime.jsx)("span", { style: { ...styles.pill, ...tone }, title: hint, children });
 }
-function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, onEdit, busy }) {
+function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, onEdit, busy, checking }) {
   const state = provider.status?.state ?? "unknown";
   const stateTone = state === "ok" ? styles.pillOk : state === "unknown" ? styles.pillGrey : styles.pillBad;
   const stateHint = state === "unknown" ? t("hintUnknownState") : provider.status?.message ?? state;
@@ -311,7 +322,9 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
         ] })
       ] }) }),
       (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: (0, import_jsx_runtime.jsx)("div", { style: styles.badges, children: [
-        (0, import_jsx_runtime.jsx)(Pill, { tone: stateTone, hint: stateHint, children: state === "unknown" ? "?" : state }),
+        // While a check runs the pill becomes a spinner: a still "?" cannot tell
+        // "not checked yet" from "being checked right now".
+        checking ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("checking"), children: (0, import_jsx_runtime.jsx)("span", { style: styles.spinner }) }) : (0, import_jsx_runtime.jsx)(Pill, { tone: stateTone, hint: stateHint, children: state === "unknown" ? "?" : state }),
         permission("R", caps.get === true, t("hintRead")),
         permission("W", caps.put === true, t("hintWrite")),
         permission("D", caps.delete === true, t("hintDelete")),
@@ -596,6 +609,7 @@ function StoragePage(props) {
   const [error, setError] = (0, import_react.useState)(null);
   const [adding, setAdding] = (0, import_react.useState)(false);
   const [editingId, setEditingId] = (0, import_react.useState)(null);
+  const [checkingId, setCheckingId] = (0, import_react.useState)(null);
   const peek = async () => {
     const body = await request("/providers");
     const next = Array.isArray(body.providers) ? body.providers : [];
@@ -691,19 +705,23 @@ function StoragePage(props) {
         (0, import_jsx_runtime.jsx)("th", { style: { ...styles.th, whiteSpace: "nowrap" }, children: "" }),
         (0, import_jsx_runtime.jsx)("th", { style: { ...styles.th, whiteSpace: "nowrap" }, children: "" })
       ] }) }),
+      // One keyframes block for the spinner; inline styles cannot declare them.
+      (0, import_jsx_runtime.jsx)("style", { children: "@keyframes dsh-storage-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }" }),
       (0, import_jsx_runtime.jsx)("tbody", { children: providers.map((provider) => (0, import_jsx_runtime.jsx)(StorageRow, {
         provider,
         capabilities,
         t,
         busy,
+        checking: checkingId === provider.id,
         onTest: (id) => {
           const before = providers.find((item) => item.id === id)?.status?.checkedAt ?? null;
+          setCheckingId(id);
           return act(
             async () => {
               await request(`/providers/${indexOf(id)}/test`, { method: "POST" });
             },
             { until: (next) => (next.find((item) => item.id === id)?.status?.checkedAt ?? null) !== before }
-          );
+          ).finally(() => setCheckingId(null));
         },
         onPrimary: (id) => act(
           async () => {

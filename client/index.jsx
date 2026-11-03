@@ -56,6 +56,15 @@ const styles = {
   pillGrey: { background: 'rgba(128,128,128,0.28)' },
   pillBad: { background: 'rgba(220,80,70,0.28)' },
   pillFree: { background: 'rgba(70,130,220,0.30)' },
+  spinner: {
+    display: 'inline-block',
+    width: 10,
+    height: 10,
+    border: '2px solid rgba(200,200,200,0.45)',
+    borderTopColor: 'rgba(240,240,240,0.95)',
+    borderRadius: '50%',
+    animation: 'dsh-storage-spin 0.9s linear infinite',
+  },
   form: { border: '1px solid rgba(128,128,128,0.3)', borderRadius: 8, padding: 12, marginTop: 8 },
   row: { display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 },
   field: { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 220, flex: '1 1 220px' },
@@ -133,7 +142,7 @@ function Pill({ children, tone, hint }) {
  * everything smaller than the name fits into one strip of pills, so the name and
  * its type keep the width.
  */
-function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, onEdit, busy }) {
+function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, onEdit, busy, checking }) {
   const state = provider.status?.state ?? 'unknown'
   const stateTone = state === 'ok' ? styles.pillOk : state === 'unknown' ? styles.pillGrey : styles.pillBad
   const stateHint = state === 'unknown'
@@ -166,7 +175,11 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
         ] }),
       ] }) }),
       jsx('td', { style: styles.td, children: jsx('div', { style: styles.badges, children: [
-        jsx(Pill, { tone: stateTone, hint: stateHint, children: state === 'unknown' ? '?' : state }),
+        // While a check runs the pill becomes a spinner: a still "?" cannot tell
+        // "not checked yet" from "being checked right now".
+        checking
+          ? jsx(Pill, { tone: styles.pillGrey, hint: t('checking'), children: jsx('span', { style: styles.spinner }) })
+          : jsx(Pill, { tone: stateTone, hint: stateHint, children: state === 'unknown' ? '?' : state }),
         permission('R', caps.get === true, t('hintRead')),
         permission('W', caps.put === true, t('hintWrite')),
         permission('D', caps.delete === true, t('hintDelete')),
@@ -486,6 +499,7 @@ export function StoragePage(props) {
   const [error, setError] = useState(null)
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [checkingId, setCheckingId] = useState(null)
 
   /** Read the list without painting it: a stale read must not roll the panel back. */
   const peek = async () => {
@@ -603,17 +617,21 @@ export function StoragePage(props) {
         jsx('th', { style: { ...styles.th, whiteSpace: 'nowrap' }, children: '' }),
         jsx('th', { style: { ...styles.th, whiteSpace: 'nowrap' }, children: '' }),
       ] }) }),
+      // One keyframes block for the spinner; inline styles cannot declare them.
+      jsx('style', { children: '@keyframes dsh-storage-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }' }),
       jsx('tbody', { children: providers.map(provider => jsx(StorageRow, {
         provider,
         capabilities,
         t,
         busy,
+        checking: checkingId === provider.id,
         onTest: id => {
           const before = providers.find(item => item.id === id)?.status?.checkedAt ?? null
+          setCheckingId(id)
           return act(
             async () => { await request(`/providers/${indexOf(id)}/test`, { method: 'POST' }) },
             { until: next => (next.find(item => item.id === id)?.status?.checkedAt ?? null) !== before },
-          )
+          ).finally(() => setCheckingId(null))
         },
         onPrimary: id => act(
           async () => { await request(`/providers/${indexOf(id)}/primary`, { method: 'POST' }) },
