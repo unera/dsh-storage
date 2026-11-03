@@ -1335,7 +1335,7 @@ export function registerFilestoreRoutes(connection, api) {
     route('/api/filestore/device/start', ['POST'], body => api.deviceStart(body)),
     route('/api/filestore/device/poll', ['POST'], body => api.devicePoll(body)),
     route('/api/filestore/auth/start', ['POST'], (body, request) => api.browserAuthStart(body, request)),
-
+    route('/api/filestore/auth/callback', ['GET'], (_body, request) => api.browserAuthCallback(request)),
   ]
 }
 
@@ -1836,37 +1836,16 @@ export function apply(ctx, config = {}) {
     })
   })
 
-  // Admin operations ride the host's owner-only /api channel. The OAuth callback
-  // is the one exception: Dropbox redirects a browser without an owner principal,
-  // so only this exact, state-protected endpoint is public.
-  ctx.inject(['settings', 'connection', 'webServer'], child => {
+  // The admin API rides the host's own /api channel, which admits only an
+  // authenticated owner. A bare prefix registered on the web server would answer
+  // the whole internet, and that is not a decision a storage plugin gets to make.
+  ctx.inject(['settings', 'connection'], child => {
     const settings = child.settings
     if (typeof settings?.update !== 'function') return undefined
     const api = createFilestoreApi(settings, filestore, () => shared.credentials, child)
     return child.effect(() => {
       const disposers = registerFilestoreRoutes(child.connection, api)
-      const callbackDispose = child.webServer.register({
-        kind: 'exact',
-        path: '/api/filestore/auth/callback',
-        handler: async (request, response) => {
-          const host = request.headers.host ?? 'localhost'
-          const protocol = child.webServer.protocol === 'https:' ? 'https' : 'http'
-          const url = new URL(request.url ?? '/', `${protocol}://${host}`)
-          let result
-          try {
-            result = await api.browserAuthCallback(new Request(url, { method: 'GET' }))
-          } catch (error) {
-            result = { status: 400, body: { error: String(error?.message ?? error), code: error?.code ?? 'FILESTORE_OAUTH_FAILED' } }
-          }
-          const text = JSON.stringify(result.body)
-          response.writeHead(result.status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-length': Buffer.byteLength(text) })
-          response.end(text)
-        },
-      })
-      return () => {
-        try { callbackDispose?.() } catch { /* already gone */ }
-        for (const dispose of disposers) { try { dispose?.() } catch { /* already gone */ } }
-      }
+      return () => { for (const dispose of disposers) { try { dispose?.() } catch { /* already gone */ } } }
     })
   })
 }
