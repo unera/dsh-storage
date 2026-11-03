@@ -409,16 +409,17 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
               onClick: () => copyCode(device.userCode),
             }),
             device === null ? null : jsx('span', { style: styles.hint, children: copied ? t('deviceCopied') : '' }),
+            // The instruction rides the same line and is pushed to the right edge;
+            // short wording keeps it there on a narrow panel.
+            device === null ? null : jsx('span', { style: { marginLeft: 'auto', fontSize: 15 }, children: [
+              `${t('deviceOpen')} `,
+              jsx('a', { href: device.verificationUrl, target: '_blank', rel: 'noreferrer', children: t('deviceOpenLink') }),
+            ] }),
           ] }),
           // Why the button does nothing, in words instead of a tooltip: a greyed
           // button with a hidden reason reads as broken.
           deviceReady ? null : jsx('div', { style: { ...styles.hint, marginTop: 4 }, children: deviceBlockedReason }),
-          // Aligned to the right edge and a touch larger: it is the instruction a
-          // person actually follows, not a footnote.
-          device === null ? null : jsx('div', { style: { marginTop: 8, textAlign: 'right', fontSize: 15 }, children: [
-            `${t('deviceOpen')} `,
-            jsx('a', { href: device.verificationUrl, target: '_blank', rel: 'noreferrer', children: t('deviceOpenLink') }),
-          ] }),
+
           device === null ? null : jsx('div', { style: { ...styles.hint, marginTop: 6 }, children: device.status === 'ok'
             ? (editing ? t('deviceDone') : t('deviceDoneUnsaved'))
             : device.status === 'error' ? `${t('failed')}: ${device.error}` : t('deviceWaiting') }),

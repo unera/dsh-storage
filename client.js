@@ -63,8 +63,8 @@ var DICTIONARIES = {
     "token": "OAuth token",
     "deviceConnect": "Connect with a code",
     "deviceCode": "Code",
-    "deviceOpen": "Enter this code on the",
-    "deviceOpenLink": "page",
+    "deviceOpen": "Enter the code",
+    "deviceOpenLink": "here",
     "deviceOpenButton": "Open the page",
     "deviceCopy": "Copy the code to the clipboard",
     "deviceCopied": "copied",
@@ -131,8 +131,8 @@ var DICTIONARIES = {
     "token": "OAuth-\u0442\u043E\u043A\u0435\u043D",
     "deviceConnect": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u043F\u043E \u043A\u043E\u0434\u0443",
     "deviceCode": "\u041A\u043E\u0434",
-    "deviceOpen": "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u044D\u0442\u043E\u0442 \u043A\u043E\u0434 \u043D\u0430",
-    "deviceOpenLink": "\u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0435",
+    "deviceOpen": "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043A\u043E\u0434",
+    "deviceOpenLink": "\u0437\u0434\u0435\u0441\u044C",
     "deviceOpenButton": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443",
     "deviceCopy": "\u0421\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043E\u0434 \u0432 \u0431\u0443\u0444\u0435\u0440 \u043E\u0431\u043C\u0435\u043D\u0430",
     "deviceCopied": "\u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u043E",
@@ -524,17 +524,17 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
             title: t("deviceCopy"),
             onClick: () => copyCode(device.userCode)
           }),
-          device === null ? null : (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: copied ? t("deviceCopied") : "" })
+          device === null ? null : (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: copied ? t("deviceCopied") : "" }),
+          // The instruction rides the same line and is pushed to the right edge;
+          // short wording keeps it there on a narrow panel.
+          device === null ? null : (0, import_jsx_runtime.jsx)("span", { style: { marginLeft: "auto", fontSize: 15 }, children: [
+            `${t("deviceOpen")} `,
+            (0, import_jsx_runtime.jsx)("a", { href: device.verificationUrl, target: "_blank", rel: "noreferrer", children: t("deviceOpenLink") })
+          ] })
         ] }),
         // Why the button does nothing, in words instead of a tooltip: a greyed
         // button with a hidden reason reads as broken.
         deviceReady ? null : (0, import_jsx_runtime.jsx)("div", { style: { ...styles.hint, marginTop: 4 }, children: deviceBlockedReason }),
-        // Aligned to the right edge and a touch larger: it is the instruction a
-        // person actually follows, not a footnote.
-        device === null ? null : (0, import_jsx_runtime.jsx)("div", { style: { marginTop: 8, textAlign: "right", fontSize: 15 }, children: [
-          `${t("deviceOpen")} `,
-          (0, import_jsx_runtime.jsx)("a", { href: device.verificationUrl, target: "_blank", rel: "noreferrer", children: t("deviceOpenLink") })
-        ] }),
         device === null ? null : (0, import_jsx_runtime.jsx)("div", { style: { ...styles.hint, marginTop: 6 }, children: device.status === "ok" ? editing ? t("deviceDone") : t("deviceDoneUnsaved") : device.status === "error" ? `${t("failed")}: ${device.error}` : t("deviceWaiting") })
       ] })
     ] }) : (0, import_jsx_runtime.jsxs)("div", { children: [
