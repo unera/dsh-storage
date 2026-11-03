@@ -8,6 +8,7 @@
     ".": "./index.mjs",
     "./s3": "./s3.mjs",
     "./backup": "./backup.mjs",
+    "./selfbackup": "./selfbackup.mjs",
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
@@ -17,6 +18,7 @@
     "webdav.mjs",
     "yadisk.mjs",
     "backup.mjs",
+    "selfbackup.mjs",
     "client.js",
     "cordis.patch.yml",
     "README.md",

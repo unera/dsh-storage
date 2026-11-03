@@ -162,6 +162,21 @@ Workspace живёт внутри дерева DSH (`<DSH_HOME>/storage/backups/
 | POST | `/api/filestore/backups/delete` | удалить запись |
 | POST | `/api/filestore/backups/run` | запустить сейчас, вернуть результат |
 
+### Self-backup: `dsh-storage.cfg`
+
+dsh-storage участвует в собственном бэкапе: на `prepare-backup` создаёт секцию
+`dsh-storage.cfg/`, на `backup-section` дописывает её. Внутри:
+
+- `config.json` — providers/backups без секретов (настройки namespace
+  `dsh-storage` для `settings.update`);
+- `credentials.json` — только собственные ссылки credentials: токены
+  хранилищ, OAuth app-secret и ключи бэкапов, выведенные из настроенных
+  записей (reference-пространство не перечисляется, поэтому чужое не дампится;
+  `listRecords` не трогается);
+- `RESTORE.md` — установка, распаковка, порядок восстановления config затем
+  credentials, проверка; ключ бэкапа в открытый файл не пишется;
+- `status.json` — атомарно, `status: ok`.
+
 ### Ограничения (host API не позволяет)
 
 - **Cron**: готового cron-сервиса у хоста нет, поэтому шедулер — внутренний,

@@ -323,9 +323,10 @@ test('the backup admin API saves a key encoded, lists and runs a backup', async 
 
       const run = await callApi(record, { method: 'POST', path: '/api/filestore/backups/run', body: { id: 'bk-0001' } })
       assert.equal(run.status, 200)
-      // No participants create sections in this boot, so it is an empty backup.
+      // dsh-storage backs itself up, so the run is not empty: it uploads an archive.
       assert.equal(run.body.code, 'ok')
-      assert.equal(run.body.message, 'empty backup was not uploaded')
+      assert.match(run.body.message, /^uploaded daily_/)
+      assert.match(run.body.archive.name, /^daily_.*\.tar$/)
     } finally {
       await ctx.stop?.()
     }

@@ -36,6 +36,10 @@ import {
   encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries, normalizeBackupEntry,
   readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
 } from './backup.mjs'
+import {
+  SELF_SECTION_NAME, collectCredentialRefs, credentialsDocument, finalizeSelfSection, prepareSelfSection,
+  providerClientRef, resolveCredentialRefs, sanitizeConfigDocument,
+} from './selfbackup.mjs'
 
 /** Stable Loader identity. */
 export const name = 'dsh-storage'
@@ -45,6 +49,12 @@ export {
   BackupWorkspace, DEFAULT_ROTATION, DEFAULT_TIMEOUT_SECONDS, atomicWriteStatus, backupTimestamp, decodeBackupKey,
   encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries, normalizeBackupEntry,
   readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
+}
+
+// Re-export the self-backup participant surface.
+export {
+  SELF_SECTION_NAME, collectCredentialRefs, credentialsDocument, finalizeSelfSection, prepareSelfSection,
+  providerClientRef, resolveCredentialRefs, sanitizeConfigDocument,
 }
 
 /** Events the backup engine dispatches on the plugin context. */
@@ -1926,6 +1936,22 @@ export function apply(ctx, config = {}) {
     if (resolved === undefined || resolved === null) return undefined
     return typeof resolved === 'string' ? resolved : resolved.value
   }
+
+  // Self-backup: dsh-storage participates in its own backup. The prepare event
+  // is synchronous (config + RESTORE.md written with sync fs); the section event
+  // is asynchronous, so the owned credentials are resolved there and the status
+  // is marked ok last.
+  ctx.on(BACKUP_EVENTS.prepare, workspace => {
+    prepareSelfSection(workspace, { providers: filestore.entries(), backups: readBackups() })
+  })
+  ctx.on(BACKUP_EVENTS.section, payload => {
+    if (payload?.section !== SELF_SECTION_NAME) return undefined
+    return finalizeSelfSection(payload.directory, {
+      store: shared.credentials,
+      providers: filestore.entries(),
+      backups: readBackups(),
+    })
+  })
 
   // Cron scheduler. There is no host cron service, so the plugin ticks once a
   // minute and runs any backup whose `schedule` matches the current minute.
