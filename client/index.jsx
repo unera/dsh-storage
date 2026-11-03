@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { DICTIONARIES, NS } from './locales.js'
 
@@ -208,6 +208,12 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
  * cannot change while editing: an existing entry keeps its driver.
  */
 function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
+  // The form sits above a list that is often longer than the screen, so opening it
+  // scrolled off-view looked like nothing happened.
+  const rootRef = useRef(null)
+  useEffect(() => {
+    rootRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }, [])
   const editing = initial !== undefined
   // One id per form, allocated on open and sent with the save: a token taken by
   // the device handshake before saving then lands on this very entry.
@@ -351,7 +357,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
     }
   }
 
-  return jsx('div', { style: styles.form, children: [
+  return jsx('div', { ref: rootRef, style: styles.form, children: [
     jsx('div', { style: styles.row, children: [
       jsx('label', { style: styles.field, children: [
         jsx('span', { children: t('type') }),

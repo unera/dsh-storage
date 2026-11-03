@@ -355,6 +355,10 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
   });
 }
 function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
+  const rootRef = (0, import_react.useRef)(null);
+  (0, import_react.useEffect)(() => {
+    rootRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  }, []);
   const editing = initial !== void 0;
   const [entryId] = (0, import_react.useState)(() => initial?.id ?? `st-${Math.random().toString(36).slice(2, 6)}`);
   const [type, setType] = (0, import_react.useState)(initial?.type ?? types[0] ?? "local");
@@ -469,7 +473,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
       setBusy(false);
     }
   };
-  return (0, import_jsx_runtime.jsx)("div", { style: styles.form, children: [
+  return (0, import_jsx_runtime.jsx)("div", { ref: rootRef, style: styles.form, children: [
     (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
       (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("type") }),
