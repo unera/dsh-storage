@@ -104,7 +104,7 @@ test('atomicWriteStatus rewrites status.json and replaces its inode even with th
   }
 })
 
-test('buildSectionPayload emits a gpg-wrapped zstd tar with the section data only', async () => {
+test('buildSectionPayload emits a gpg-wrapped zstd tar rooted at the section, RESTORE.md inside', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'dsh-backup-payload-'))
   try {
     const section = path.join(root, 'db')
@@ -113,21 +113,21 @@ test('buildSectionPayload emits a gpg-wrapped zstd tar with the section data onl
     writeFileSync(path.join(section, 'sub', 'x.txt'), 'x')
     writeFileSync(path.join(section, 'RESTORE.md'), '# restore')
     writeFileSync(path.join(section, 'status.json'), '{}')
-    const out = path.join(root, 'payload.tar.zst.gpg')
-    await buildSectionPayload(section, out, 'topsecret')
+    const out = path.join(root, 'db.tar.zstd.gpg')
+    await buildSectionPayload('db', section, out, 'topsecret')
     const dec = execFileSync('gpg', ['--batch', '--yes', '--pinentry-mode', 'loopback', '--passphrase', 'topsecret', '-d', out])
     const tar = execFileSync('zstd', ['-dc'], { input: dec })
     const listing = execFileSync('tar', ['-tf', '-'], { input: tar, encoding: 'utf8' })
-    assert.match(listing, /dump\.sql/)
-    assert.match(listing, /sub\/x\.txt/)
-    assert.doesNotMatch(listing, /RESTORE\.md/)
+    assert.match(listing, /db\/dump\.sql/)
+    assert.match(listing, /db\/sub\/x\.txt/)
+    assert.match(listing, /db\/RESTORE\.md/, 'section RESTORE.md stays inside the archive')
     assert.doesNotMatch(listing, /status\.json/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('buildBackupContainer produces a plain outer tar with payloads and open RESTORE.md', async () => {
+test('buildBackupContainer produces a flat outer tar: RESTORE.md + <section>.tar.zstd.gpg', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'dsh-backup-outer-'))
   try {
     const workspace = path.join(root, 'ws')
@@ -141,9 +141,16 @@ test('buildBackupContainer produces a plain outer tar with payloads and open RES
     assert.match(readFileSync(built.shaPath, 'utf8'), /^[0-9a-f]{64}  daily_2026-11-03_16\.51\.32Z\.tar\n$/)
     const listing = execFileSync('tar', ['-tf', built.archivePath], { encoding: 'utf8' })
     assert.match(listing, /RESTORE\.md/)
-    assert.match(listing, /sections\/db\/payload\.tar\.zst\.gpg/)
-    assert.match(listing, /sections\/db\/RESTORE\.md/)
-    assert.doesNotMatch(listing, /sections\/db\/status\.json/)
+    assert.match(listing, /db\.tar\.zstd\.gpg/)
+    assert.doesNotMatch(listing, /sections\//, 'no sections/ subdirectory in the flat container')
+    // The section archive is decryptable and rooted at db/.
+    const payload = execFileSync('tar', ['-xOf', built.archivePath, 'db.tar.zstd.gpg'])
+    const dec = execFileSync('gpg', ['--batch', '--yes', '--pinentry-mode', 'loopback', '--passphrase', 'topsecret', '-d'], { input: payload })
+    const tar = execFileSync('zstd', ['-dc'], { input: dec })
+    const inner = execFileSync('tar', ['-tf', '-'], { input: tar, encoding: 'utf8' })
+    assert.match(inner, /db\/dump\.sql/)
+    assert.match(inner, /db\/RESTORE\.md/)
+    assert.doesNotMatch(inner, /status\.json/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

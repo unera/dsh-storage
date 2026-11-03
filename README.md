@@ -150,14 +150,14 @@ dsh plugin --profile web add @dr-co/dsh-storage
 
 Внешний загружаемый архив — всегда чистый
 `<sanitized-name>_YYYY-MM-DD_HH.mm.ssZ.tar`, рядом `.sha256` (формат
-`sha256sum`); снаружи `.gpg` нет. Внутри внешнего tar на каждую выбранную
-секцию:
+`sha256sum`); снаружи `.gpg` нет. Внешний tar содержит **только файлы верхнего
+уровня**:
 
-- `sections/<section>/payload.tar.zst.gpg` — tar секции (Unix-права/режимы),
-  сжатый zstd и зашифрованный OpenPGP; после `gpg -d` получается обычный
-  `payload.tar.zst`, читается `zstd -dc | tar -xf -`;
-- `sections/<section>/RESTORE.md` — открытым текстом рядом с payload;
-- общий `RESTORE.md` — открытое описание контейнера и порядка распаковки.
+- `RESTORE.md` — общий, открытый, описывает контейнер и порядок распаковки;
+- `<section>.tar.zstd[.gpg]` — на каждую выбранную секцию: tar с корневым
+  каталогом секции (Unix-права/режимы), сжатый zstd и зашифрованный OpenPGP.
+  Section-specific `RESTORE.md` лежит внутри этого архива. После `gpg -d`
+  получается `<section>.tar.zstd`, читается `zstd -dc | tar -xf -`.
 
 `status.json` — служебный статус обработки, в контейнер не входит. Ключ:
 обрезаются только начальные/конечные пробелы, внутренние сохраняются, UTF-8
@@ -196,8 +196,9 @@ dsh-storage участвует в собственном бэкапе: на `pre
   credentials, проверка; ключ бэкапа в открытый файл не пишется;
 - `status.json` — атомарно, `status: ok` (в итоговый контейнер не входит).
 
-В контейнер секция попадает как `payload.tar.zst.gpg` (config + credentials)
-плюс открытый `RESTORE.md`.
+В контейнер секция попадает как `dsh-storage.cfg.tar.zstd.gpg` (config,
+credentials и собственный RESTORE.md внутри зашифрованного архива); открытым
+остаётся только общий `RESTORE.md`.
 
 ### Ограничения (host API не позволяет)
 

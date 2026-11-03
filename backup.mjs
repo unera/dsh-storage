@@ -24,7 +24,7 @@
  *
  * @module @dr-co/dsh-storage/backup
  */
-import { copyFileSync, createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, createWriteStream, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { createZstdCompress } from 'node:zlib'
 import { createHash, randomUUID } from 'node:crypto'
@@ -408,9 +408,13 @@ export async function discoverSections(ctx, options = {}) {
 }
 
 /** Recursively collect files and directories under `root` for an archive. */
-export function collectEntries(root, { exclude = [] } = {}) {
+export function collectEntries(root, { exclude = [], rootName = '' } = {}) {
   const skip = new Set(exclude)
   const entries = []
+  const relOf = childRel => (rootName === '' ? childRel : `${rootName}/${childRel}`)
+  if (rootName !== '') {
+    entries.push({ rel: rootName, abs: root, type: '5', size: 0, mtime: statSync(root).mtimeMs })
+  }
   const walk = (dir, rel) => {
     const names = readdirSync(dir, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))
     for (const dirent of names) {
@@ -419,10 +423,10 @@ export function collectEntries(root, { exclude = [] } = {}) {
       const childRel = rel === '' ? dirent.name : `${rel}/${dirent.name}`
       const info = statSync(absolute)
       if (dirent.isDirectory()) {
-        entries.push({ rel: childRel, abs: absolute, type: '5', size: 0, mtime: info.mtimeMs })
+        entries.push({ rel: relOf(childRel), abs: absolute, type: '5', size: 0, mtime: info.mtimeMs })
         walk(absolute, childRel)
       } else if (dirent.isFile()) {
-        entries.push({ rel: childRel, abs: absolute, type: '0', size: info.size, mtime: info.mtimeMs })
+        entries.push({ rel: relOf(childRel), abs: absolute, type: '0', size: info.size, mtime: info.mtimeMs })
       }
       // Symlinks and special files are skipped: a backup must not chase them.
     }
@@ -524,49 +528,51 @@ export const CONTAINER_RESTORE_MD = `# Резервная копия dsh-storage
 
 ## Структура
 
-- \`RESTORE.md\` — этот файл.
-- \`sections/<section>/payload.tar.zst.gpg\` — содержимое одной секции: tar
-  (с Unix-правами и режимами), сжатый zstd и зашифрованный OpenPGP паролем
-  бэкапа. После расшифровки получается обычный \`payload.tar.zst\`.
-- \`sections/<section>/RESTORE.md\` — открытые инструкции восстановления секции.
-- \`status.json\` — служебный статус обработки секции, в контейнер не входит.
+Внешний tar содержит только файлы верхнего уровня:
+
+- \`RESTORE.md\` — этот файл (общий, открытый).
+- \`<section>.tar.zstd[.gpg]\` — архив одной секции: tar с корневым каталогом
+  секции (Unix-права/режимы сохраняются), сжатый zstd и зашифрованный OpenPGP
+  паролем бэкапа. Внутри него лежит и section-specific \`RESTORE.md\` секции.
+- \`status.json\` — служебный статус обработки, в контейнер не входит.
 
 ## Распаковка
 
 1. Внешний архив — обычный tar: \`tar -xf <name>.tar\`.
-2. Для каждой нужной секции расшифруйте payload:
+2. Для каждой нужной секции расшифруйте section-архив (если он с \`.gpg\`):
 
    \`\`\`
    gpg --batch --yes --pinentry-mode loopback --passphrase "<ключ>" \\
-     -d sections/<section>/payload.tar.zst.gpg > sections/<section>/payload.tar.zst
+     -d <section>.tar.zstd.gpg > <section>.tar.zstd
    \`\`\`
 
-3. Распакуйте: \`zstd -dc sections/<section>/payload.tar.zst | tar -xf - -C <section>/\`.
+3. Распакуйте: \`zstd -dc <section>.tar.zstd | tar -xf -\` — создастся каталог
+   \`<section>/\` с содержимым.
 
 ## Восстановление
 
-См. \`sections/<section>/RESTORE.md\` каждой секции — там порядок восстановления
-и проверки.
+См. \`RESTORE.md\` внутри каждого \`<section>.tar.zstd\` — там порядок
+восстановления и проверки конкретной секции.
 `
 
 /**
- * Build one section's payload: a tar (Unix permissions preserved) of the
- * section's data files, zstd-compressed and optionally encrypted with OpenPGP.
- * `status.json` and the section's own `RESTORE.md` are excluded — the former is
- * service state, the latter is copied as a plaintext sibling into the outer tar.
+ * Build one section's archive: a tar (Unix permissions preserved) of the
+ * section's data files, rooted at the section's directory name, zstd-compressed
+ * and optionally encrypted with OpenPGP. `status.json` is excluded (service
+ * state); the section's own `RESTORE.md` stays inside the archive.
  */
-export async function buildSectionPayload(sectionDir, outFile, key) {
-  const tar = tarWorkspace(sectionDir, { exclude: ['status.json', 'RESTORE.md'] })
+export async function buildSectionPayload(sectionName, sectionDir, outFile, key) {
+  const tar = tarWorkspace(sectionDir, { exclude: ['status.json'], rootName: sectionName })
   const zstd = tar.pipe(createZstdCompress())
   const source = key === '' ? zstd : await encryptStream(zstd, key)
   await pipeline(source, createWriteStream(outFile))
 }
 
 /**
- * Build the outer container: a plain tar holding, per selected section, its
- * encrypted `payload.tar.zst.gpg` and its open `RESTORE.md`, plus a
- * container-level `RESTORE.md`. The outer tar is always `<name>_<ts>.tar` with
- * a `.sha256` sidecar; there is never a `.gpg` outside.
+ * Build the outer container: a plain tar holding only top-level files — the
+ * container-level `RESTORE.md` and one `<section>.tar.zstd[.gpg]` per selected
+ * section. No `sections/` subdirectories. The outer tar is always
+ * `<name>_<ts>.tar` with a `.sha256` sidecar; there is never a `.gpg` outside.
  *
  * @returns `{ archivePath, shaPath, archiveName, shaName, sha256, size, encrypted }`.
  */
@@ -575,14 +581,10 @@ export async function buildBackupContainer(workspace, stage, { name, key = '', s
   const container = path.join(stage, 'container')
   await mkdir(container, { recursive: true })
 
+  const suffix = key === '' ? '.tar.zstd' : '.tar.zstd.gpg'
   for (const section of sections) {
     const sectionDir = path.join(workspace, section)
-    const payloadDir = path.join(container, 'sections', section)
-    await mkdir(payloadDir, { recursive: true })
-    const payloadName = key === '' ? 'payload.tar.zst' : 'payload.tar.zst.gpg'
-    await buildSectionPayload(sectionDir, path.join(payloadDir, payloadName), key)
-    const sectionRestore = path.join(sectionDir, 'RESTORE.md')
-    if (existsSync(sectionRestore)) copyFileSync(sectionRestore, path.join(payloadDir, 'RESTORE.md'))
+    await buildSectionPayload(section, sectionDir, path.join(container, `${section}${suffix}`), key)
   }
   await writeFile(path.join(container, 'RESTORE.md'), CONTAINER_RESTORE_MD, 'utf8')
 

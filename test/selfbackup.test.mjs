@@ -165,17 +165,21 @@ test('a real backup run captures dsh-storage.cfg with config, credentials and st
       const run = await callApi(record, { method: 'POST', path: '/api/filestore/backups/run', body: { id: 'bk-0001' } })
       assert.equal(run.body.code, 'ok')
 
-      // Outer archive is a plain tar; the section payload is gpg+zstd inside it.
+      // Outer archive is a flat plain tar: RESTORE.md + <section>.tar.zstd.gpg.
       const archive = readdirSync(path.join(storageRoot, 'bk')).find(name => name.endsWith('.tar'))
       assert.ok(archive, 'a plain .tar container was uploaded')
       const archivePath = path.join(storageRoot, 'bk', archive)
 
-      const openMember = name => execFileSync('tar', ['-xOf', archivePath, `sections/dsh-storage.cfg/${name}`], { encoding: 'utf8' })
+      // Only the container-level RESTORE.md is open.
+      const containerRestore = execFileSync('tar', ['-xOf', archivePath, 'RESTORE.md'], { encoding: 'utf8' })
+      assert.match(containerRestore, /dsh-storage/)
+      assert.doesNotMatch(containerRestore, /topsecret/, 'open RESTORE.md must not contain the key')
 
-      const payload = execFileSync('tar', ['-xOf', archivePath, 'sections/dsh-storage.cfg/payload.tar.zst.gpg'])
+      // The section archive is encrypted gpg+zstd; the section-specific RESTORE.md is inside it.
+      const payload = execFileSync('tar', ['-xOf', archivePath, 'dsh-storage.cfg.tar.zstd.gpg'])
       const dec = execFileSync('gpg', ['--batch', '--yes', '--pinentry-mode', 'loopback', '--passphrase', 'topsecret', '-d'], { input: payload })
       const tarBytes = execFileSync('zstd', ['-dc'], { input: dec })
-      const payloadMember = name => execFileSync('tar', ['-xOf', '-', name], { input: tarBytes, encoding: 'utf8' })
+      const payloadMember = name => execFileSync('tar', ['-xOf', '-', `dsh-storage.cfg/${name}`], { input: tarBytes, encoding: 'utf8' })
 
       const config = JSON.parse(payloadMember('config.json'))
       assert.equal(config.providers[0].id, 'st-0001')
@@ -188,7 +192,7 @@ test('a real backup run captures dsh-storage.cfg with config, credentials and st
       assert.equal(creds.references.DSH_FILESTORE_BACKUP_BK_0001_KEY.value, Buffer.from('topsecret', 'utf8').toString('base64'))
       assert.equal(creds.references.DSH_FILESTORE_ST_0001_CLIENT, undefined)
 
-      const restore = openMember('RESTORE.md')
+      const restore = payloadMember('RESTORE.md')
       assert.match(restore, /Установка/)
       assert.doesNotMatch(restore, /topsecret/, 'RESTORE.md must not contain the key')
       assert.doesNotMatch(restore, /dG9wc2VjcmV0/, 'RESTORE.md must not contain the base64 key')
