@@ -668,8 +668,9 @@ export function StoragePage(props) {
 const BACKUP_SECTION_ID = 'backup'
 
 /** One backup row. */
-function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, running }) {
+function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, onRefresh, busy, running, refreshing }) {
   const provider = providers.find(item => item.id === backup.providerId)
+  const sectionCount = Array.isArray(backup.sections) ? backup.sections.length : 0
   return jsx('tr', {
     children: [
       jsx('td', { style: styles.td, children: [
@@ -679,6 +680,7 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
       ] }),
       jsx('td', { style: styles.td, children: jsx('div', { style: styles.badges, children: [
         jsx(Pill, { tone: styles.pillGrey, hint: t('backup.rotationHint'), children: `↻ ${backup.rotation}` }),
+        jsx(Pill, { tone: styles.pillGrey, hint: t('backup.sectionsHint'), children: `${t('backup.sections')}: ${sectionCount}` }),
         backup.keyConfigured ? jsx(Pill, { tone: styles.pillOk, hint: t('backup.keySet'), children: '🔑' }) : null,
         backup.schedule === '' ? null : jsx(Pill, { tone: styles.pillFree, hint: t('backup.schedule'), children: backup.schedule }),
       ] }) }),
@@ -686,6 +688,9 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
         running
           ? jsx(Pill, { tone: styles.pillGrey, hint: t('backup.running'), children: jsx('span', { style: styles.spinner }) })
           : jsx(IconButton, { icon: 'test', title: t('backup.run'), disabled: busy, onClick: () => onRun(backup.id) }),
+        refreshing
+          ? jsx(Pill, { tone: styles.pillGrey, hint: t('backup.refreshing'), children: jsx('span', { style: styles.spinner }) })
+          : jsx(IconButton, { icon: 'test', title: t('backup.refreshSections'), disabled: busy, onClick: () => onRefresh(backup.id) }),
         jsx(IconButton, { icon: 'edit', title: t('backup.edit'), disabled: busy, onClick: () => onEdit(backup.id) }),
         jsx(IconButton, { icon: 'remove', title: t('backup.remove'), disabled: busy, onClick: () => onRemove(backup.id) }),
       ] }) }),
@@ -701,6 +706,7 @@ function BackupForm({ providers, t, initial, onCancel, onSaved }) {
   const [rotation, setRotation] = useState(String(initial?.rotation ?? 10))
   const [timeoutSeconds, setTimeoutSeconds] = useState(String(initial?.timeoutSeconds ?? 300))
   const [ignore, setIgnore] = useState((initial?.ignore ?? []).join('\n'))
+  const [include, setInclude] = useState((initial?.include ?? []).join('\n'))
   const [key, setKey] = useState('')
   const [schedule, setSchedule] = useState(initial?.schedule ?? '')
   const [error, setError] = useState(null)
@@ -721,6 +727,7 @@ function BackupForm({ providers, t, initial, onCancel, onSaved }) {
           rotation: Number(rotation) || 10,
           timeoutSeconds: Number(timeoutSeconds) || 300,
           ignore: ignore.split('\n').map(item => item.trim()).filter(item => item !== ''),
+          include: include.split('\n').map(item => item.trim()).filter(item => item !== ''),
           schedule: schedule.trim(),
           ...(key.trim() === '' ? {} : { key }),
         },
@@ -765,10 +772,17 @@ function BackupForm({ providers, t, initial, onCancel, onSaved }) {
         jsx('span', { style: styles.hint, children: t('backup.scheduleHint') }),
       ] }),
     ] }),
-    jsx('label', { style: styles.field, children: [
-      jsx('span', { children: t('backup.ignore') }),
-      jsx('textarea', { style: { ...styles.input, minHeight: 52 }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
-      jsx('span', { style: styles.hint, children: t('backup.ignoreHint') }),
+    jsx('div', { style: styles.row, children: [
+      jsx('label', { style: styles.field, children: [
+        jsx('span', { children: t('backup.ignore') }),
+        jsx('textarea', { style: { ...styles.input, minHeight: 52 }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
+        jsx('span', { style: styles.hint, children: t('backup.ignoreHint') }),
+      ] }),
+      jsx('label', { style: styles.field, children: [
+        jsx('span', { children: t('backup.include') }),
+        jsx('textarea', { style: { ...styles.input, minHeight: 52 }, value: include, placeholder: 'db\n*', onChange: event => setInclude(event.target.value) }),
+        jsx('span', { style: styles.hint, children: t('backup.includeHint') }),
+      ] }),
     ] }),
     jsx('label', { style: { ...styles.field, marginTop: 8 }, children: [
       jsx('span', { children: t('backup.key') }),
@@ -800,6 +814,7 @@ export function BackupPage(props) {
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [runningId, setRunningId] = useState(null)
+  const [refreshingId, setRefreshingId] = useState(null)
   const [result, setResult] = useState(null)
 
   const fetchOnce = async () => {
@@ -852,6 +867,21 @@ export function BackupPage(props) {
     }
   }
 
+  const refresh = async id => {
+    setRefreshingId(id)
+    setBusy(true)
+    setError(null)
+    try {
+      await request('/backups/sections', { method: 'POST', body: { id } })
+      await load()
+    } catch (problem) {
+      setError(problem.message)
+    } finally {
+      setBusy(false)
+      setRefreshingId(null)
+    }
+  }
+
   const form = adding
     ? { key: 'new' }
     : editingId === null
@@ -892,7 +922,9 @@ export function BackupPage(props) {
         t,
         busy,
         running: runningId === backup.id,
+        refreshing: refreshingId === backup.id,
         onRun: run,
+        onRefresh: refresh,
         onEdit: id => { setEditingId(id); setAdding(false) },
         onRemove: remove,
       }, backup.id)) }),

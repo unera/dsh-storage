@@ -130,7 +130,13 @@ var DICTIONARIES = {
     "backup.running": "running\u2026",
     "backup.remove": "Delete",
     "backup.confirmRemove": "Delete this backup? Uploaded archives stay where they are; only the entry goes away.",
-    "backup.ok": "Backup done"
+    "backup.ok": "Backup done",
+    "backup.include": "Include sections",
+    "backup.includeHint": "one glob per line; empty means * (everything).",
+    "backup.refreshSections": "Refresh section list",
+    "backup.refreshing": "refreshing\u2026",
+    "backup.sections": "Sections",
+    "backup.sectionsHint": "discovered sections from the last refresh"
   },
   ru: {
     "nav.title": "\u0425\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430",
@@ -226,7 +232,13 @@ var DICTIONARIES = {
     "backup.running": "\u0432\u044B\u043F\u043E\u043B\u043D\u044F\u0435\u0442\u0441\u044F\u2026",
     "backup.remove": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C",
     "backup.confirmRemove": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u0443\u044E \u043A\u043E\u043F\u0438\u044E? \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u043D\u044B\u0435 \u0430\u0440\u0445\u0438\u0432\u044B \u043E\u0441\u0442\u0430\u043D\u0443\u0442\u0441\u044F \u043D\u0430 \u043C\u0435\u0441\u0442\u0435, \u0438\u0441\u0447\u0435\u0437\u043D\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0437\u0430\u043F\u0438\u0441\u044C.",
-    "backup.ok": "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u043A\u043E\u043F\u0438\u044F \u0441\u043E\u0437\u0434\u0430\u043D\u0430"
+    "backup.ok": "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u043A\u043E\u043F\u0438\u044F \u0441\u043E\u0437\u0434\u0430\u043D\u0430",
+    "backup.include": "\u0412\u043A\u043B\u044E\u0447\u0430\u0442\u044C \u0441\u0435\u043A\u0446\u0438\u0438",
+    "backup.includeHint": "\u043F\u043E \u043E\u0434\u043D\u043E\u043C\u0443 \u0433\u043B\u043E\u0431\u0443 \u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0443; \u043F\u0443\u0441\u0442\u043E \u2014 * (\u0432\u0441\u0451).",
+    "backup.refreshSections": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0441\u0435\u043A\u0446\u0438\u0439",
+    "backup.refreshing": "\u043E\u0431\u043D\u043E\u0432\u043B\u044F\u044E\u2026",
+    "backup.sections": "\u0421\u0435\u043A\u0446\u0438\u0438",
+    "backup.sectionsHint": "\u043E\u0431\u043D\u0430\u0440\u0443\u0436\u0435\u043D\u043D\u044B\u0435 \u0441\u0435\u043A\u0446\u0438\u0438 \u0441 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0435\u0433\u043E \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F"
   }
 };
 
@@ -812,8 +824,9 @@ function StoragePage(props) {
   ] });
 }
 var BACKUP_SECTION_ID = "backup";
-function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, running }) {
+function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, onRefresh, busy, running, refreshing }) {
   const provider = providers.find((item) => item.id === backup.providerId);
+  const sectionCount = Array.isArray(backup.sections) ? backup.sections.length : 0;
   return (0, import_jsx_runtime.jsx)("tr", {
     children: [
       (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: [
@@ -823,11 +836,13 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
       ] }),
       (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: (0, import_jsx_runtime.jsx)("div", { style: styles.badges, children: [
         (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("backup.rotationHint"), children: `\u21BB ${backup.rotation}` }),
+        (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("backup.sectionsHint"), children: `${t("backup.sections")}: ${sectionCount}` }),
         backup.keyConfigured ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillOk, hint: t("backup.keySet"), children: "\u{1F511}" }) : null,
         backup.schedule === "" ? null : (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillFree, hint: t("backup.schedule"), children: backup.schedule })
       ] }) }),
       (0, import_jsx_runtime.jsx)("td", { style: { ...styles.td, whiteSpace: "nowrap", verticalAlign: "top" }, children: (0, import_jsx_runtime.jsx)("div", { style: styles.buttonColumn, children: [
         running ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("backup.running"), children: (0, import_jsx_runtime.jsx)("span", { style: styles.spinner }) }) : (0, import_jsx_runtime.jsx)(IconButton, { icon: "test", title: t("backup.run"), disabled: busy, onClick: () => onRun(backup.id) }),
+        refreshing ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("backup.refreshing"), children: (0, import_jsx_runtime.jsx)("span", { style: styles.spinner }) }) : (0, import_jsx_runtime.jsx)(IconButton, { icon: "test", title: t("backup.refreshSections"), disabled: busy, onClick: () => onRefresh(backup.id) }),
         (0, import_jsx_runtime.jsx)(IconButton, { icon: "edit", title: t("backup.edit"), disabled: busy, onClick: () => onEdit(backup.id) }),
         (0, import_jsx_runtime.jsx)(IconButton, { icon: "remove", title: t("backup.remove"), disabled: busy, onClick: () => onRemove(backup.id) })
       ] }) })
@@ -841,6 +856,7 @@ function BackupForm({ providers, t, initial, onCancel, onSaved }) {
   const [rotation, setRotation] = (0, import_react.useState)(String(initial?.rotation ?? 10));
   const [timeoutSeconds, setTimeoutSeconds] = (0, import_react.useState)(String(initial?.timeoutSeconds ?? 300));
   const [ignore, setIgnore] = (0, import_react.useState)((initial?.ignore ?? []).join("\n"));
+  const [include, setInclude] = (0, import_react.useState)((initial?.include ?? []).join("\n"));
   const [key, setKey] = (0, import_react.useState)("");
   const [schedule, setSchedule] = (0, import_react.useState)(initial?.schedule ?? "");
   const [error, setError] = (0, import_react.useState)(null);
@@ -860,6 +876,7 @@ function BackupForm({ providers, t, initial, onCancel, onSaved }) {
           rotation: Number(rotation) || 10,
           timeoutSeconds: Number(timeoutSeconds) || 300,
           ignore: ignore.split("\n").map((item) => item.trim()).filter((item) => item !== ""),
+          include: include.split("\n").map((item) => item.trim()).filter((item) => item !== ""),
           schedule: schedule.trim(),
           ...key.trim() === "" ? {} : { key }
         }
@@ -903,10 +920,17 @@ function BackupForm({ providers, t, initial, onCancel, onSaved }) {
         (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.scheduleHint") })
       ] })
     ] }),
-    (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
-      (0, import_jsx_runtime.jsx)("span", { children: t("backup.ignore") }),
-      (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 52 }, value: ignore, placeholder: "logs\nnode_modules", onChange: (event) => setIgnore(event.target.value) }),
-      (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.ignoreHint") })
+    (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
+      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+        (0, import_jsx_runtime.jsx)("span", { children: t("backup.ignore") }),
+        (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 52 }, value: ignore, placeholder: "logs\nnode_modules", onChange: (event) => setIgnore(event.target.value) }),
+        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.ignoreHint") })
+      ] }),
+      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+        (0, import_jsx_runtime.jsx)("span", { children: t("backup.include") }),
+        (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 52 }, value: include, placeholder: "db\n*", onChange: (event) => setInclude(event.target.value) }),
+        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.includeHint") })
+      ] })
     ] }),
     (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, marginTop: 8 }, children: [
       (0, import_jsx_runtime.jsx)("span", { children: t("backup.key") }),
@@ -936,6 +960,7 @@ function BackupPage(props) {
   const [adding, setAdding] = (0, import_react.useState)(false);
   const [editingId, setEditingId] = (0, import_react.useState)(null);
   const [runningId, setRunningId] = (0, import_react.useState)(null);
+  const [refreshingId, setRefreshingId] = (0, import_react.useState)(null);
   const [result, setResult] = (0, import_react.useState)(null);
   const fetchOnce = async () => {
     const body = await request("/backups");
@@ -984,6 +1009,20 @@ function BackupPage(props) {
       setBusy(false);
     }
   };
+  const refresh = async (id) => {
+    setRefreshingId(id);
+    setBusy(true);
+    setError(null);
+    try {
+      await request("/backups/sections", { method: "POST", body: { id } });
+      await load();
+    } catch (problem) {
+      setError(problem.message);
+    } finally {
+      setBusy(false);
+      setRefreshingId(null);
+    }
+  };
   const form = adding ? { key: "new" } : editingId === null ? null : (() => {
     const backup = backups.find((item) => item.id === editingId);
     return backup === void 0 ? null : { key: backup.id, initial: { ...backup } };
@@ -1027,7 +1066,9 @@ function BackupPage(props) {
         t,
         busy,
         running: runningId === backup.id,
+        refreshing: refreshingId === backup.id,
         onRun: run,
+        onRefresh: refresh,
         onEdit: (id) => {
           setEditingId(id);
           setAdding(false);

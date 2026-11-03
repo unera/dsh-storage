@@ -11,9 +11,11 @@
  *   - `dsh-storage/prepare-backup`  sync; passes a {@link BackupWorkspace}.
  *     Participants create any number of sections synchronously.
  *   - `dsh-storage/backup-section`  async (`ctx.parallel`); passes
- *     `{ directory, section, signal }`. The receiver MUST rewrite
- *     `$section/status.json` atomically (temp file + rename) even when the
- *     status value is unchanged; missing rewrite is an immediate error.
+ *     `{ directory, section, signal }`. The host fires the event and polls
+ *     `$section/status.json` (at most once per second) until it reaches
+ *     `ok` / `error` / `child-failed`. The receiver MUST rewrite status.json
+ *     atomically (temp file + rename, which replaces the inode); a missing
+ *     rewrite is a contract error. A rejected handler is captured, never lost.
  *
  * A section is one direct subdirectory of the workspace. It may carry a
  * `RESTORE.md` and must support a `status.json` of the shape
@@ -22,8 +24,9 @@
  *
  * @module @dr-co/dsh-storage/backup
  */
-import { createReadStream, createWriteStream, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { createZstdCompress } from 'node:zlib'
 import { createHash, randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -31,6 +34,9 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import * as openpgp from 'openpgp'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+
+/** Yield between status.json polls, at most once per second. */
+const defaultSleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 /** Status values a section receiver may report. */
 export const SECTION_STATUS = Object.freeze(['ok', 'running', 'error', 'child-failed'])
@@ -40,6 +46,9 @@ export const SECTION_OUTCOMES = Object.freeze(['ok', 'ignored', 'timeout', 'no-s
 
 /** Default per-section timeout, in seconds. */
 export const DEFAULT_TIMEOUT_SECONDS = 5 * 60
+
+/** Minimum interval between status.json polls; never busy-loop. */
+export const POLL_INTERVAL_MS = 1000
 
 /** Default number of kept archive pairs. */
 export const DEFAULT_ROTATION = 10
@@ -164,6 +173,12 @@ export function normalizeBackupEntry(raw, index, providerIds = []) {
   const ignore = Array.isArray(raw.ignore)
     ? raw.ignore.map(item => String(item).trim()).filter(item => item !== '')
     : []
+  const include = Array.isArray(raw.include)
+    ? raw.include.map(item => String(item).trim()).filter(item => item !== '')
+    : []
+  const sections = Array.isArray(raw.sections)
+    ? raw.sections.map(item => String(item).trim()).filter(item => item !== '')
+    : []
   const credentialRefValue = typeof raw.credentialRef === 'string' && raw.credentialRef.trim() !== ''
     ? credentialRef(raw.credentialRef.trim())
     : makeBackupKeyRef(id)
@@ -176,6 +191,8 @@ export function normalizeBackupEntry(raw, index, providerIds = []) {
     rotation,
     timeoutSeconds,
     ignore,
+    include,
+    sections,
     credentialRef: credentialRefValue,
     schedule: typeof raw.schedule === 'string' ? raw.schedule.trim() : '',
   }
@@ -251,19 +268,35 @@ export function listSections(root) {
     .sort((left, right) => left.localeCompare(right))
 }
 
-/**
- * Whether a section name matches one of the ignore patterns. A pattern is a
- * glob where `*` matches any run of characters; it is matched against the
- * section directory name, not its path.
- */
-export function isIgnoredSection(name, patterns = []) {
-  for (const raw of patterns) {
-    const pattern = String(raw).trim()
-    if (pattern === '') continue
-    const regex = new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`)
-    if (regex.test(name)) return true
-  }
+/** Whether one glob matches a section name (`*` matches any run of characters). */
+export function matchesGlob(name, pattern) {
+  const text = String(pattern ?? '').trim()
+  if (text === '') return false
+  const regex = new RegExp(`^${text.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`)
+  return regex.test(name)
+}
+
+/** Whether a section name matches any of the patterns. */
+export function matchesAnyGlob(name, patterns = []) {
+  for (const raw of patterns) if (matchesGlob(name, raw)) return true
   return false
+}
+
+/** Whether a section name matches one of the ignore patterns (a glob). */
+export function isIgnoredSection(name, patterns = []) {
+  return matchesAnyGlob(name, patterns)
+}
+
+/**
+ * Apply the include/ignore selection to a discovered section list.
+ * An empty `include` means `*` (everything); an empty `ignore` excludes nothing;
+ * `ignore` always wins over `include`.
+ */
+export function filterSections(names, { include = [], ignore = [] } = {}) {
+  const included = (include?.length ?? 0) === 0
+    ? [...names]
+    : names.filter(name => matchesAnyGlob(name, include))
+  return included.filter(name => !matchesAnyGlob(name, ignore))
 }
 
 /** Path of a section's status.json. */
@@ -354,12 +387,34 @@ export async function removeWorkspace(dir) {
   if (typeof dir === 'string' && dir !== '') await rm(dir, { recursive: true, force: true })
 }
 
-/** Recursively collect files and directories under `root` for the archive. */
-export function collectEntries(root) {
+/**
+ * Discovery only: create a workspace, run the synchronous `prepare-backup`, and
+ * return the section names. No section events, no archive, no upload; the
+ * workspace is removed in `finally`. This backs the "refresh sections" action.
+ *
+ * @param ctx - cordis context; must expose `emit`.
+ * @param options.dshHome - override the DSH tree root (tests).
+ * @returns the discovered section names.
+ */
+export async function discoverSections(ctx, options = {}) {
+  const workspace = await createWorkspace(options.dshHome)
+  try {
+    const handle = new BackupWorkspace(workspace)
+    ctx.emit('dsh-storage/prepare-backup', handle)
+    return listSections(workspace)
+  } finally {
+    await removeWorkspace(workspace)
+  }
+}
+
+/** Recursively collect files and directories under `root` for an archive. */
+export function collectEntries(root, { exclude = [] } = {}) {
+  const skip = new Set(exclude)
   const entries = []
   const walk = (dir, rel) => {
     const names = readdirSync(dir, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))
     for (const dirent of names) {
+      if (rel === '' && skip.has(dirent.name)) continue
       const absolute = path.join(dir, dirent.name)
       const childRel = rel === '' ? dirent.name : `${rel}/${dirent.name}`
       const info = statSync(absolute)
@@ -433,8 +488,8 @@ export function tarHeader(entry) {
 }
 
 /** Yield the tar byte chunks of a workspace; files are read streaming. */
-export async function* tarChunks(root) {
-  for (const entry of collectEntries(root)) {
+export async function* tarChunks(root, options = {}) {
+  for (const entry of collectEntries(root, options)) {
     yield tarHeader(entry)
     if (entry.type === '0' && entry.size > 0) {
       const stream = createReadStream(entry.abs)
@@ -447,8 +502,8 @@ export async function* tarChunks(root) {
 }
 
 /** A Node Readable of the workspace tar. */
-export function tarWorkspace(root) {
-  return Readable.from(tarChunks(root))
+export function tarWorkspace(root, options = {}) {
+  return Readable.from(tarChunks(root, options))
 }
 
 /**
@@ -462,44 +517,97 @@ export async function encryptStream(nodeReadable, key) {
   return Readable.fromWeb(encrypted)
 }
 
-/** File name (with optional `.gpg`) for an archive. */
-export function archiveFileName(base, encrypted) {
-  return encrypted ? `${base}.gpg` : base
+/** The open, secret-free description of the outer container. */
+export const CONTAINER_RESTORE_MD = `# Резервная копия dsh-storage — контейнер
+
+Этот файл описывает контейнер (внешний tar). Секретов здесь нет.
+
+## Структура
+
+- \`RESTORE.md\` — этот файл.
+- \`sections/<section>/payload.tar.zst.gpg\` — содержимое одной секции: tar
+  (с Unix-правами и режимами), сжатый zstd и зашифрованный OpenPGP паролем
+  бэкапа. После расшифровки получается обычный \`payload.tar.zst\`.
+- \`sections/<section>/RESTORE.md\` — открытые инструкции восстановления секции.
+- \`status.json\` — служебный статус обработки секции, в контейнер не входит.
+
+## Распаковка
+
+1. Внешний архив — обычный tar: \`tar -xf <name>.tar\`.
+2. Для каждой нужной секции расшифруйте payload:
+
+   \`\`\`
+   gpg --batch --yes --pinentry-mode loopback --passphrase "<ключ>" \\
+     -d sections/<section>/payload.tar.zst.gpg > sections/<section>/payload.tar.zst
+   \`\`\`
+
+3. Распакуйте: \`zstd -dc sections/<section>/payload.tar.zst | tar -xf - -C <section>/\`.
+
+## Восстановление
+
+См. \`sections/<section>/RESTORE.md\` каждой секции — там порядок восстановления
+и проверки.
+`
+
+/**
+ * Build one section's payload: a tar (Unix permissions preserved) of the
+ * section's data files, zstd-compressed and optionally encrypted with OpenPGP.
+ * `status.json` and the section's own `RESTORE.md` are excluded — the former is
+ * service state, the latter is copied as a plaintext sibling into the outer tar.
+ */
+export async function buildSectionPayload(sectionDir, outFile, key) {
+  const tar = tarWorkspace(sectionDir, { exclude: ['status.json', 'RESTORE.md'] })
+  const zstd = tar.pipe(createZstdCompress())
+  const source = key === '' ? zstd : await encryptStream(zstd, key)
+  await pipeline(source, createWriteStream(outFile))
 }
 
 /**
- * Build an archive on disk, in a staging directory, from a workspace.
+ * Build the outer container: a plain tar holding, per selected section, its
+ * encrypted `payload.tar.zst.gpg` and its open `RESTORE.md`, plus a
+ * container-level `RESTORE.md`. The outer tar is always `<name>_<ts>.tar` with
+ * a `.sha256` sidecar; there is never a `.gpg` outside.
  *
- * @returns `{ archivePath, shaPath, archiveName, shaName, sha256, size }`.
+ * @returns `{ archivePath, shaPath, archiveName, shaName, sha256, size, encrypted }`.
  */
-export async function buildArchive(workspace, stage, { name, key = '', now = new Date() } = {}) {
+export async function buildBackupContainer(workspace, stage, { name, key = '', sections = [], now = new Date() } = {}) {
   await mkdir(stage, { recursive: true })
+  const container = path.join(stage, 'container')
+  await mkdir(container, { recursive: true })
+
+  for (const section of sections) {
+    const sectionDir = path.join(workspace, section)
+    const payloadDir = path.join(container, 'sections', section)
+    await mkdir(payloadDir, { recursive: true })
+    const payloadName = key === '' ? 'payload.tar.zst' : 'payload.tar.zst.gpg'
+    await buildSectionPayload(sectionDir, path.join(payloadDir, payloadName), key)
+    const sectionRestore = path.join(sectionDir, 'RESTORE.md')
+    if (existsSync(sectionRestore)) copyFileSync(sectionRestore, path.join(payloadDir, 'RESTORE.md'))
+  }
+  await writeFile(path.join(container, 'RESTORE.md'), CONTAINER_RESTORE_MD, 'utf8')
+
   const base = `${sanitizeBackupName(name)}_${backupTimestamp(now)}.tar`
-  const encrypted = key !== ''
-  const archiveName = archiveFileName(base, encrypted)
-  const shaName = `${archiveName}.sha256`
+  const archiveName = base
+  const shaName = `${base}.sha256`
   const archivePath = path.join(stage, archiveName)
   const shaPath = path.join(stage, shaName)
 
   const hasher = createHash('sha256')
-  const source = encrypted ? await encryptStream(tarWorkspace(workspace), key) : tarWorkspace(workspace)
-  const sink = createWriteStream(archivePath)
   const hashing = new Transform({
     transform(chunk, _encoding, callback) {
       hasher.update(chunk)
       callback(null, chunk)
     },
   })
-  await pipeline(source, hashing, sink)
+  await pipeline(tarWorkspace(container), hashing, createWriteStream(archivePath))
   const sha256 = hasher.digest('hex')
   await writeFile(shaPath, `${sha256}  ${archiveName}\n`, 'utf8')
-  const info = statSync(archivePath)
-  return { archivePath, shaPath, archiveName, shaName, sha256, size: info.size }
+  return { archivePath, shaPath, archiveName, shaName, sha256, size: statSync(archivePath).size, encrypted: key !== '' }
 }
 
-/** Match an archive file name for a sanitized backup prefix. */
+/** Match an outer archive file name for a sanitized backup prefix. */
 export function archiveNamePattern(prefix) {
-  return new RegExp(`^${prefix.replace(/[.+?^${}()|[\]\\]/g, '\\$&')}_\\d{4}-\\d{2}-\\d{2}_\\d{2}\\.\\d{2}\\.\\d{2}Z\\.tar(?:\\.gpg)?$`)
+  return new RegExp(`^${prefix.replace(/[.+?^${}()|[\]\\]/g, '\\$&')}_\\d{4}-\\d{2}-\\d{2}_\\d{2}\\.\\d{2}\\.\\d{2}Z\\.tar$`)
 }
 
 /**
@@ -527,35 +635,64 @@ export async function rotateBackups(driver, directory, name, keep) {
   return { deleted }
 }
 
-/** Classify one processed section from the evidence the event left behind. */
-export function classifySection({ name, timedOut, thrown, directory, beforeIno }) {
+/**
+ * Classify a section from the evidence available right now. Returns an
+ * `outcome`; `'running'` means "keep polling".
+ *
+ * The rewrite signal is the inode: an atomic temp-file + rename replaces the
+ * inode, immune to filesystem clock granularity.
+ */
+export function classifySection({ name, directory, beforeIno, thrown, settled, timedOut }) {
   const status = readSectionStatus(directory)
   const pids = Array.isArray(status?.pids) ? status.pids : []
-  if (timedOut) {
-    return { name, outcome: 'timeout', message: `section exceeded its timeout`, pids }
+  const rewrote = !status.missing && status.ino !== undefined && status.ino !== beforeIno
+
+  // A rejected handler is an error even if it also wrote a status.
+  if (thrown !== undefined) {
+    return { name, outcome: 'error-status', message: String(thrown?.message ?? thrown), pids, ...(rewrote ? { status: status.status } : {}) }
   }
-  // A rewrite via temp file + rename replaces the inode; a receiver that did not
-  // touch status.json leaves the same inode behind, and that is the hard signal
-  // of "no status update", immune to filesystem clock granularity.
-  if (status.missing || status.ino === undefined || status.ino === beforeIno) {
+  if (rewrote) {
+    if (status.invalid) return { name, outcome: 'error-status', message: `status.json is invalid: ${status.error}`, pids }
+    if (status.status === 'ok') return { name, outcome: 'ok', message: status.message ?? 'ok', pids, status: 'ok' }
+    if (status.status === 'child-failed') return { name, outcome: 'child-failure', message: status.message ?? 'a child process failed', pids, status: 'child-failed' }
+    if (status.status === 'error') return { name, outcome: 'error-status', message: status.message ?? 'section reported an error', pids, status: 'error' }
+    // Rewritten but not terminal (e.g. still 'running').
+    if (timedOut) return { name, outcome: 'timeout', message: 'section exceeded its timeout', pids, status: status.status }
+    return { name, outcome: 'running', pids, status: status.status }
+  }
+  // Never rewritten: the handler finished (settled) or the deadline elapsed.
+  if (settled || timedOut) {
     return { name, outcome: 'no-status-update', message: 'receiver did not rewrite status.json', pids }
   }
-  if (thrown !== undefined) {
-    return { name, outcome: 'error-status', message: String(thrown?.message ?? thrown), pids, status: status.status }
+  return { name, outcome: 'running', pids }
+}
+
+/**
+ * Run one section: fire the section event (without blocking on the handler's
+ * promise), then poll `status.json` at most once per second until it reaches a
+ * terminal status, the handler rejects, or the timeout elapses. Thrown errors
+ * from the handler are captured, never lost, and never left unhandled.
+ *
+ * @returns a classified section result (see {@link classifySection}).
+ */
+export async function processSection(ctx, { directory, section, timeoutMs, pollIntervalMs = POLL_INTERVAL_MS, sleep = defaultSleep } = {}) {
+  const beforeIno = readSectionStatus(directory).ino
+  const controller = new AbortController()
+  let thrown
+  let settled = false
+  const eventPromise = ctx.parallel('dsh-storage/backup-section', { directory, section, signal: controller.signal })
+  eventPromise.then(() => { settled = true }, error => { settled = true; thrown = error })
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const timedOut = Date.now() >= deadline
+    const result = classifySection({ name: section, directory, beforeIno, thrown, settled, timedOut })
+    if (result.outcome !== 'running') {
+      if (timedOut) controller.abort()
+      return result
+    }
+    // Never oversleep the deadline; never poll faster than the interval.
+    await sleep(Math.min(pollIntervalMs, Math.max(1, deadline - Date.now())))
   }
-  if (status.invalid) {
-    return { name, outcome: 'error-status', message: `status.json is invalid: ${status.error}`, pids }
-  }
-  if (status.status === 'child-failed') {
-    return { name, outcome: 'child-failure', message: status.message ?? 'a child process failed', pids, status: status.status }
-  }
-  if (status.status === 'ok') {
-    return { name, outcome: 'ok', message: status.message ?? 'ok', pids, status: status.status }
-  }
-  if (status.status === 'error') {
-    return { name, outcome: 'error-status', message: status.message ?? 'section reported an error', pids, status: status.status }
-  }
-  return { name, outcome: 'error-status', message: `section finished with unexpected status ${JSON.stringify(status.status)}`, pids, status: status.status }
 }
 
 /**
@@ -568,12 +705,18 @@ export function classifySection({ name, timedOut, thrown, directory, beforeIno }
  * @param resolveSecret - resolves the encryption key credential (raw base64).
  * @param options.logger - logger with `error`; defaults to console.
  * @param options.now - clock for the archive timestamp.
+ * @param options.persistSections - called with the discovered section names after
+ *   prepare, before include/ignore filtering.
+ * @param options.pollIntervalMs - status poll interval; defaults to 1000.
+ * @param options.sleep - delay function `(ms) => Promise`; defaults to setTimeout.
  * @returns `{ code, message, details }`, and `archive` on success.
  */
 export async function runBackup(ctx, entry, filestore, resolveSecret, options = {}) {
   const logger = options.logger ?? console
   const now = options.now ?? (() => new Date())
+  const sleep = typeof options.sleep === 'function' ? options.sleep : defaultSleep
   const timeoutMs = (entry.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000
+  const pollIntervalMs = Number.isInteger(options.pollIntervalMs) && options.pollIntervalMs > 0 ? options.pollIntervalMs : POLL_INTERVAL_MS
   const workspace = await createWorkspace(options.dshHome)
   const stage = path.join(backupStageDir(options.dshHome), `stage-${randomUUID()}`)
   try {
@@ -582,51 +725,44 @@ export async function runBackup(ctx, entry, filestore, resolveSecret, options = 
     // 1. Participants create sections synchronously.
     ctx.emit('dsh-storage/prepare-backup', handle)
 
-    // 2. Enumerate sections, drop ignored ones.
-    const details = []
-    const sections = listSections(workspace).filter(name => {
-      if (!isIgnoredSection(name, entry.ignore)) return true
-      rmSync(path.join(workspace, name), { recursive: true, force: true })
-      details.push({ name, outcome: 'ignored', message: 'ignored' })
-      return false
-    })
-
-    // 3. An empty backup is a clean no-op: no archive, no upload.
-    if (sections.length === 0) {
-      return { code: 'ok', message: 'empty backup was not uploaded', details: { sections: details, killed: [] } }
+    // 2. Persist the discovered list regardless of the include/ignore subset.
+    const discovered = listSections(workspace)
+    if (typeof options.persistSections === 'function') {
+      try {
+        await options.persistSections(discovered)
+      } catch (error) {
+        logger.error?.(`[dsh-storage] could not persist discovered sections: ${String(error?.message ?? error)}`)
+      }
     }
 
-    // 4. Process sections sequentially; a section's failure ends the backup.
+    // 3. Select the subset: empty include means `*`, ignore always wins.
+    const sections = filterSections(discovered, { include: entry.include, ignore: entry.ignore })
+    const ignored = discovered.filter(name => !sections.includes(name))
+    const details = ignored.map(name => ({ name, outcome: 'ignored', message: 'ignored' }))
+
+    // 4. An empty selection is a clean no-op: no archive, no upload.
+    if (sections.length === 0) {
+      return { code: 'ok', message: 'empty backup was not uploaded', details: { sections: details, killed: [], discovered } }
+    }
+
+    // 5. Process sections sequentially, polling status.json without blocking.
     for (const name of sections) {
       const directory = path.join(workspace, name)
-      const beforeIno = readSectionStatus(directory).ino
-      const controller = new AbortController()
-      let timedOut = false
-      let thrown
-      let onTimeout
-      const timeoutPromise = new Promise(resolve => { onTimeout = resolve })
-      const timer = setTimeout(() => { timedOut = true; controller.abort(); onTimeout() }, timeoutMs)
-      try {
-        await Promise.race([ctx.parallel('dsh-storage/backup-section', { directory, section: name, signal: controller.signal }), timeoutPromise])
-      } catch (error) {
-        thrown = error
-      } finally {
-        clearTimeout(timer)
-      }
-      const classified = classifySection({ name, timedOut, thrown, directory, beforeIno })
-      details.push(classified)
-      if (classified.outcome !== 'ok') {
+      const result = await processSection(ctx, { directory, section: name, timeoutMs, pollIntervalMs, sleep })
+      details.push(result)
+      if (result.outcome !== 'ok') {
         const pids = collectPids(workspace)
         killPids(pids)
         return {
-          code: codeForOutcome(classified.outcome),
-          message: `section ${JSON.stringify(name)} failed: ${classified.message}`,
-          details: { sections: details, killed: pids },
+          code: codeForOutcome(result.outcome),
+          message: `section ${JSON.stringify(name)} failed: ${result.message}`,
+          details: { sections: details, killed: pids, discovered },
         }
       }
+      await sleep(0) // explicit yield between sections
     }
 
-    // 5. Archive, upload, rotate.
+    // 6. Container, upload, rotate.
     let key = ''
     try {
       const resolved = await resolveSecret(entry.credentialRef)
@@ -635,7 +771,7 @@ export async function runBackup(ctx, entry, filestore, resolveSecret, options = 
     } catch {
       key = ''
     }
-    const built = await buildArchive(workspace, stage, { name: entry.name, key, now: now() })
+    const built = await buildBackupContainer(workspace, stage, { name: entry.name, key, sections, now: now() })
     const driver = filestore.driver(entry.providerId)
     const dirKey = entry.directory ?? ''
     const archiveKey = dirKey === '' ? built.archiveName : `${dirKey}/${built.archiveName}`
@@ -647,7 +783,7 @@ export async function runBackup(ctx, entry, filestore, resolveSecret, options = 
     return {
       code: 'ok',
       message: `uploaded ${built.archiveName} to ${entry.providerId}${dirKey === '' ? '' : `/${dirKey}`}, sha256 ${built.sha256.slice(0, 12)}…`,
-      details: { sections: details, killed: [], rotation },
+      details: { sections: details, killed: [], rotation, discovered },
       archive: { name: built.archiveName, sha256: built.sha256, size: built.size, key: archiveKey, encrypted: key !== '' },
     }
   } catch (error) {

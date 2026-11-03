@@ -33,7 +33,7 @@ import { createWebdavDriver } from './webdav.mjs'
 import { createYandexDriver } from './yadisk.mjs'
 import {
   BackupWorkspace, DEFAULT_ROTATION, DEFAULT_TIMEOUT_SECONDS, atomicWriteStatus, backupTimestamp, decodeBackupKey,
-  encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries, normalizeBackupEntry,
+  discoverSections, encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries, normalizeBackupEntry,
   readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
 } from './backup.mjs'
 import {
@@ -1311,6 +1311,8 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     rotation: entry.rotation,
     timeoutSeconds: entry.timeoutSeconds,
     ignore: [...entry.ignore],
+    include: [...entry.include],
+    sections: [...entry.sections],
     credentialRef: entry.credentialRef,
     schedule: entry.schedule,
   })
@@ -1371,11 +1373,32 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     const entries = normalizeBackupEntries(backups, providerIds)
     const entry = entries.find(item => item.id === body?.id)
     if (entry === undefined) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
-    const result = await runBackup(ctx, entry, filestore, resolveSecretValue, {})
+    const result = await runBackup(ctx, entry, filestore, resolveSecretValue, {
+      persistSections: discovered => persistBackupSections(entry.id, discovered),
+    })
     return { status: 200, body: result }
   }
 
-  return { list, save, remove, test, primary, deviceStart, devicePoll, listBackups, saveBackup, removeBackup, runBackupNow }
+  /** Write the discovered section list back into one backup entry. */
+  const persistBackupSections = async (id, sections) => {
+    const { backups } = readDocument()
+    const next = backups.map(entry => (entry?.id === id ? { ...entry, sections: [...sections] } : entry))
+    await writeBackups(next)
+  }
+
+  /** Prepare-only discovery: sync prepare, record sections, workspace removed. */
+  const refreshSections = async body => {
+    const { providers, backups } = readDocument()
+    const providerIds = normalizeEntries(providers).entries.map(entry => entry.id)
+    const entries = normalizeBackupEntries(backups, providerIds)
+    const entry = entries.find(item => item.id === body?.id)
+    if (entry === undefined) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
+    const discovered = await discoverSections(ctx, {})
+    await persistBackupSections(entry.id, discovered)
+    return { status: 200, body: { sections: discovered } }
+  }
+
+  return { list, save, remove, test, primary, deviceStart, devicePoll, listBackups, saveBackup, removeBackup, runBackupNow, refreshSections }
 }
 
 /**
@@ -1419,6 +1442,7 @@ export function registerFilestoreRoutes(connection, api) {
     route('/api/filestore/backups/save', ['POST'], body => api.saveBackup(body)),
     route('/api/filestore/backups/delete', ['POST'], body => api.removeBackup(body)),
     route('/api/filestore/backups/run', ['POST'], body => api.runBackupNow(body)),
+    route('/api/filestore/backups/sections', ['POST'], body => api.refreshSections(body)),
   ]
 }
 
@@ -1867,6 +1891,8 @@ export const Config = z.object({
     rotation: z.number().default(DEFAULT_ROTATION),
     timeoutSeconds: z.number().default(DEFAULT_TIMEOUT_SECONDS),
     ignore: z.array(z.string()).default([]),
+    include: z.array(z.string()).default([]),
+    sections: z.array(z.string()).default([]),
     credentialRef: z.string().default(''),
     schedule: z.string().default(''),
   })).default([]).volatile(),
@@ -1937,6 +1963,16 @@ export function apply(ctx, config = {}) {
     return typeof resolved === 'string' ? resolved : resolved.value
   }
 
+  /** Persist a freshly discovered section list back into one backup entry. */
+  const persistBackupSections = async (id, sections) => {
+    const settings = shared.settings
+    if (settings === null || typeof settings.update !== 'function') return
+    const descriptor = settings.describe().find(entry => String(entry.ns) === SETTINGS_NAMESPACE)
+    const stored = Array.isArray(descriptor?.value?.backups) ? descriptor.value.backups : []
+    const next = stored.map(entry => (entry?.id === id ? { ...entry, sections: [...sections] } : entry))
+    await settings.update(SETTINGS_NAMESPACE, { ...(descriptor?.value ?? {}), backups: next }).catch(() => {})
+  }
+
   // Self-backup: dsh-storage participates in its own backup. The prepare event
   // is synchronous (config + RESTORE.md written with sync fs); the section event
   // is asynchronous, so the owned credentials are resolved there and the status
@@ -1965,7 +2001,9 @@ export function apply(ctx, config = {}) {
         const minute = Math.floor(Date.now() / 60000)
         if ((lastRunAt.get(entry.id) ?? -1) === minute) continue
         lastRunAt.set(entry.id, minute)
-        const result = await runBackup(child, entry, filestore, resolveBackupSecret, {})
+        const result = await runBackup(child, entry, filestore, resolveBackupSecret, {
+          persistSections: discovered => persistBackupSections(entry.id, discovered),
+        })
         if (result.code === 'ok') {
           child.logger?.info?.(`[dsh-storage] cron backup ${entry.name}: ${result.message}`)
         } else {

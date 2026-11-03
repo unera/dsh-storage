@@ -116,8 +116,12 @@ dsh plugin --profile web add @dr-co/dsh-storage
 Карточка бэкапа в админке: `name`, `providerId` (id одного из настроенных
 хранилищ), `directory` (каталог внутри хранилища), `rotation` (сколько пар
 архивов хранить, по умолчанию 10), `timeoutSeconds` (таймаут одной секции,
-по умолчанию 300), `ignore` (глобы имён секций), `key` (ключ шифрования) и
-необязательный `schedule` (пятипольный cron).
+по умолчанию 300), `include`/`ignore` (глобы имён секций), `sections`
+(последний discovery, заполняется действием «Обновить список секций»), `key`
+(ключ шифрования) и необязательный `schedule` (пятипольный cron).
+
+`include=[]` эквивалентно `*` (все секции), `ignore=[]` ничего не исключает,
+`ignore` приоритетнее `include`.
 
 ### Событийная модель
 
@@ -126,11 +130,15 @@ dsh plugin --profile web add @dr-co/dsh-storage
   `workspace.section(name)`; секция — это каталог, может нести
   `RESTORE.md` и обязана поддерживать `status.json`.
 - `dsh-storage/backup-section` — асинхронно (`ctx.parallel`), получает
-  `{ directory, section, signal }`. Приёмник обязан **атомарно** переписать
-  `status.json` через временный файл + `rename` (меняет inode), даже если
-  статус не изменился; отсутствие перезаписи — немедленная ошибка.
-- Секции обрабатываются последовательно; секции разных участников
-  чередуются обычной сортировкой имён.
+  `{ directory, section, signal }`. Хост не ждёт промис обработчика: он
+  запускает событие и **опрашивает `status.json` не чаще 1 раза в секунду** с
+  явным yield, пока не появится `status=ok/error/child-failed`. Отсутствие
+  перезаписи `status.json` (inode не изменился) — ошибка по контракту.
+  Rejection промиса обработчика не теряется. Таймаут действует на всю секцию.
+- Секции обрабатываются последовательно; секции разных участников чередуются
+  обычной сортировкой имён. Перед обработкой секции фильтруются
+  `include`/`ignore`; discovered-список сохраняется целиком, независимо от
+  выбранного поднабора.
 
 `status.json`: `{ status, updatedAt, pids, message? }`. `status` — `ok`,
 `running`, `error` или `child-failed`; `pids` — PID дочерних процессов,
@@ -140,15 +148,24 @@ dsh plugin --profile web add @dr-co/dsh-storage
 
 ### Архив
 
-`<sanitized-name>_YYYY-MM-DD_HH.mm.ssZ.tar` и рядом `.sha256` (формат
-`sha256sum`). Ключ задан — имя получает суффикс `.tar.gpg`, а тело — стандартное
-OpenPGP-сообщение, которое читает CLI `gpg`. Шифрование потоковое через
-OpenPGP.js, внешний `gpg` не нужен. Ключ: обрезаются только начальные/конечные
-пробелы, внутренние сохраняются, UTF-8 байты → base64 в credentials; при
-использовании — обратное декодирование.
+Внешний загружаемый архив — всегда чистый
+`<sanitized-name>_YYYY-MM-DD_HH.mm.ssZ.tar`, рядом `.sha256` (формат
+`sha256sum`); снаружи `.gpg` нет. Внутри внешнего tar на каждую выбранную
+секцию:
+
+- `sections/<section>/payload.tar.zst.gpg` — tar секции (Unix-права/режимы),
+  сжатый zstd и зашифрованный OpenPGP; после `gpg -d` получается обычный
+  `payload.tar.zst`, читается `zstd -dc | tar -xf -`;
+- `sections/<section>/RESTORE.md` — открытым текстом рядом с payload;
+- общий `RESTORE.md` — открытое описание контейнера и порядка распаковки.
+
+`status.json` — служебный статус обработки, в контейнер не входит. Ключ:
+обрезаются только начальные/конечные пробелы, внутренние сохраняются, UTF-8
+байты → base64 в credentials; при использовании — обратное декодирование.
+zstd — встроенный `node:zlib`, внешних zstd-зависимостей нет.
 
 Workspace живёт внутри дерева DSH (`<DSH_HOME>/storage/backups/…`), не в `/tmp`,
-и удаляется после завершения. Пустой бэкап (нет секций) возвращает
+и удаляется после завершения. Пустая выборка секций возвращает
 `code: "ok"`, `message: "empty backup was not uploaded"` и ничего не грузит.
 
 ### Админ-API
@@ -161,11 +178,13 @@ Workspace живёт внутри дерева DSH (`<DSH_HOME>/storage/backups/
 | POST | `/api/filestore/backups/save` | создать/изменить (`key` кодируется в credentials) |
 | POST | `/api/filestore/backups/delete` | удалить запись |
 | POST | `/api/filestore/backups/run` | запустить сейчас, вернуть результат |
+| POST | `/api/filestore/backups/sections` | prepare-only: записать фактический список секций |
 
 ### Self-backup: `dsh-storage.cfg`
 
 dsh-storage участвует в собственном бэкапе: на `prepare-backup` создаёт секцию
-`dsh-storage.cfg/`, на `backup-section` дописывает её. Внутри:
+`dsh-storage.cfg/`, на `backup-section` дописывает её. Внутри секции (до
+архивации):
 
 - `config.json` — providers/backups без секретов (настройки namespace
   `dsh-storage` для `settings.update`);
@@ -175,7 +194,10 @@ dsh-storage участвует в собственном бэкапе: на `pre
   `listRecords` не трогается);
 - `RESTORE.md` — установка, распаковка, порядок восстановления config затем
   credentials, проверка; ключ бэкапа в открытый файл не пишется;
-- `status.json` — атомарно, `status: ok`.
+- `status.json` — атомарно, `status: ok` (в итоговый контейнер не входит).
+
+В контейнер секция попадает как `payload.tar.zst.gpg` (config + credentials)
+плюс открытый `RESTORE.md`.
 
 ### Ограничения (host API не позволяет)
 

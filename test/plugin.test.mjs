@@ -100,12 +100,13 @@ test('seven tools register, plus admin routes', async () => {
       'storage_delete', 'storage_df', 'storage_list', 'storage_ls', 'storage_mkdir', 'storage_read', 'storage_write',
     ])
     assert.deepEqual(record.configured, [{ auto: true }])
-    // Eleven exact routes under /api, which the host admits only for its owner.
+    // Twelve exact routes under /api, which the host admits only for its owner.
     assert.deepEqual(record.routes.map(route => route.path).sort(), [
       '/api/filestore/backups',
       '/api/filestore/backups/delete',
       '/api/filestore/backups/run',
       '/api/filestore/backups/save',
+      '/api/filestore/backups/sections',
       '/api/filestore/device/poll',
       '/api/filestore/device/start',
       '/api/filestore/providers',

@@ -165,33 +165,54 @@ test('a real backup run captures dsh-storage.cfg with config, credentials and st
       const run = await callApi(record, { method: 'POST', path: '/api/filestore/backups/run', body: { id: 'bk-0001' } })
       assert.equal(run.body.code, 'ok')
 
-      const archive = readdirSync(path.join(storageRoot, 'bk')).find(name => name.endsWith('.tar.gpg'))
-      assert.ok(archive, 'an encrypted archive was uploaded')
-      const tarPath = path.join(root, 'out.tar')
-      writeFileSync(tarPath, execFileSync('gpg', [
-        '--batch', '--yes', '--pinentry-mode', 'loopback', '--passphrase', 'topsecret', '-d', path.join(storageRoot, 'bk', archive),
-      ]))
-      const member = name => execFileSync('tar', ['-xOf', tarPath, `dsh-storage.cfg/${name}`], { encoding: 'utf8' })
+      // Outer archive is a plain tar; the section payload is gpg+zstd inside it.
+      const archive = readdirSync(path.join(storageRoot, 'bk')).find(name => name.endsWith('.tar'))
+      assert.ok(archive, 'a plain .tar container was uploaded')
+      const archivePath = path.join(storageRoot, 'bk', archive)
 
-      const config = JSON.parse(member('config.json'))
+      const openMember = name => execFileSync('tar', ['-xOf', archivePath, `sections/dsh-storage.cfg/${name}`], { encoding: 'utf8' })
+
+      const payload = execFileSync('tar', ['-xOf', archivePath, 'sections/dsh-storage.cfg/payload.tar.zst.gpg'])
+      const dec = execFileSync('gpg', ['--batch', '--yes', '--pinentry-mode', 'loopback', '--passphrase', 'topsecret', '-d'], { input: payload })
+      const tarBytes = execFileSync('zstd', ['-dc'], { input: dec })
+      const payloadMember = name => execFileSync('tar', ['-xOf', '-', name], { input: tarBytes, encoding: 'utf8' })
+
+      const config = JSON.parse(payloadMember('config.json'))
       assert.equal(config.providers[0].id, 'st-0001')
       assert.equal(config.providers[0].secret, undefined)
       assert.equal(config.backups[0].name, 'daily')
       assert.equal(config.backups[0].key, undefined)
 
-      const creds = JSON.parse(member('credentials.json'))
+      const creds = JSON.parse(payloadMember('credentials.json'))
       assert.equal(creds.references.DSH_FILESTORE_ST_0001.value, 'token-abc')
       assert.equal(creds.references.DSH_FILESTORE_BACKUP_BK_0001_KEY.value, Buffer.from('topsecret', 'utf8').toString('base64'))
       assert.equal(creds.references.DSH_FILESTORE_ST_0001_CLIENT, undefined)
 
-      const restore = member('RESTORE.md')
+      const restore = openMember('RESTORE.md')
       assert.match(restore, /Установка/)
       assert.doesNotMatch(restore, /topsecret/, 'RESTORE.md must not contain the key')
       assert.doesNotMatch(restore, /dG9wc2VjcmV0/, 'RESTORE.md must not contain the base64 key')
+    } finally {
+      await ctx.stop?.()
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
-      const status = JSON.parse(member('status.json'))
-      assert.equal(status.status, 'ok')
-      assert.ok(typeof status.updatedAt === 'string')
+test('the refresh-sections API runs prepare only and persists the discovered list', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-self-refresh-'))
+  try {
+    const storageRoot = path.join(root, 'storage')
+    mkdirSync(storageRoot, { recursive: true })
+    const { ctx, record } = await boot({ providers: [{ id: 'st-0001', type: 'local', label: 'tmp', role: 'primary', options: { root: storageRoot } }] })
+    try {
+      const saved = await callApi(record, { method: 'POST', path: '/api/filestore/backups/save', body: { name: 'daily', providerId: 'st-0001' } })
+      assert.equal(saved.status, 201)
+      const refreshed = await callApi(record, { method: 'POST', path: '/api/filestore/backups/sections', body: { id: 'bk-0001' } })
+      assert.equal(refreshed.status, 200)
+      assert.ok(refreshed.body.sections.includes('dsh-storage.cfg'), 'the plugin discovers its own section')
+      assert.deepEqual(record.document.backups[0].sections, refreshed.body.sections)
     } finally {
       await ctx.stop?.()
     }
