@@ -375,3 +375,58 @@ test('backup-start pids are written as running and killed on section error', asy
     child.kill('SIGKILL')
   }
 })
+
+test('integration: backup-start child runs ~30s, engine polls ~1/s and completes ok', { timeout: 60000 }, async () => {
+  const DURATION_MS = 30000
+  await withStorage(async ({ dshHome, driver }) => {
+    let child
+    const polls = []
+    let alivePolls = 0
+    const sleep = ms => {
+      if (child) {
+        try { process.kill(child.pid, 0); alivePolls += 1 } catch { /* natural exit just before the final poll */ }
+      }
+      polls.push(ms)
+      return new Promise(resolve => setTimeout(resolve, ms))
+    }
+    const entry = { id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk', rotation: 2, timeoutSeconds: 40, ignore: [], include: [], credentialRef: 'X' }
+    const observed = []
+    const ctx = {
+      emit(_name, ws) { ws.section('db') },
+      bail(_name, { section }) {
+        child = spawn(process.execPath, ['-e', `setTimeout(() => process.exit(0), ${DURATION_MS})`])
+        return { pids: [child.pid] }
+      },
+      async parallel(_name, { directory }) {
+        const before = readSectionStatus(directory)
+        observed.push({ status: before.status, pids: before.pids })
+        const code = await new Promise(resolve => child.once('exit', resolve))
+        atomicWriteStatus(directory, { status: code === 0 ? 'ok' : 'child-failed', pids: [child.pid] })
+      },
+    }
+    const startedAt = Date.now()
+    try {
+      const result = await runBackup(ctx, entry, { driver: () => driver }, async () => undefined, { dshHome, pollIntervalMs: 1000, sleep })
+      const elapsed = Date.now() - startedAt
+      assert.equal(result.code, 'ok')
+      // The engine wrote running + the start pid before the section event fired.
+      assert.deepEqual(observed[0], { status: 'running', pids: [child.pid] })
+      // Real pid, alive through the bulk of polling, exited cleanly without SIGKILL.
+      assert.ok(Number.isInteger(child.pid) && child.pid > 0)
+      assert.ok(alivePolls >= Math.floor(DURATION_MS / 1000) - 5, `child alive for ${alivePolls} polls, expected ~30`)
+      assert.equal(child.exitCode, 0)
+      assert.equal(child.signalCode, null, 'a successful child must not be SIGKILLed')
+      // Waited for the child and polled ~1/s, never a busy loop.
+      assert.ok(elapsed >= DURATION_MS, `must wait for the child (elapsed ${elapsed}ms)`)
+      assert.ok(polls.length >= Math.floor(DURATION_MS / 1000) - 3, `expected ~${Math.floor(DURATION_MS / 1000)} polls, got ${polls.length}`)
+      assert.ok(polls.length <= Math.ceil(DURATION_MS / 1000) + 5, `poll count ${polls.length} must be ~1/s`)
+      assert.ok(polls.every(ms => ms <= 1000), 'never polls faster than 1/s')
+      // Workspace cleaned up after success.
+      const workspacesDir = path.join(dshHome, 'storage', 'backups', 'workspace')
+      const leftover = existsSync(workspacesDir) ? readdirSync(workspacesDir).filter(name => name.startsWith('workspace-')) : []
+      assert.deepEqual(leftover, [], 'workspace must be removed after the backup')
+    } finally {
+      child?.kill('SIGKILL')
+    }
+  })
+})
