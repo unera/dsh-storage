@@ -28,7 +28,13 @@ export function parseDropboxCredentials(raw) {
 }
 
 export function errorForDropbox(response, body) {
-  const summary = typeof body?.error_summary === 'string' ? body.error_summary : typeof body?.error_description === 'string' ? body.error_description : ''
+  const summary = typeof body?.error_summary === 'string'
+    ? body.error_summary
+    : typeof body?.error_description === 'string'
+      ? body.error_description
+      : body?.error === undefined
+        ? ''
+        : typeof body.error === 'string' ? body.error : JSON.stringify(body.error)
   const suffix = summary === '' ? '' : `: ${summary}`
   if (response.status === 401) return new FilestoreError('FILESTORE_UNAUTHORIZED', `Dropbox не принял токен (401)${suffix}`)
   if (response.status === 403) return new FilestoreError('FILESTORE_UNAUTHORIZED', `Dropbox отказал в доступе (403)${suffix}`)
