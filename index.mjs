@@ -1166,6 +1166,60 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     return { status: 200, body: { primary: body.id } }
   }
 
+  /** Start a normal browser OAuth handshake for providers such as Dropbox. */
+  const browserAuthStart = async (body, request) => {
+    const providers = read()
+    const index = providers.findIndex(entry => entry?.id === body?.id)
+    if (index < 0) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
+    const current = normalizeEntry(providers[index], index)
+    const descriptor = OAUTH_PROVIDERS[current.type]
+    if (descriptor === undefined) return { status: 400, body: { error: `тип ${current.type} не использует OAuth`, code: 'FILESTORE_NO_OAUTH' } }
+    const clientId = String(current.options?.clientId ?? '').trim()
+    if (clientId === '') return { status: 400, body: { error: 'нужен client_id приложения', code: 'FILESTORE_NO_CLIENT_ID' } }
+    const header = name => request?.headers?.get?.(name) ?? request?.headers?.[name]
+    const host = String(header('host') ?? 'localhost')
+    const proto = String(header('x-forwarded-proto') ?? 'https').split(',')[0].trim()
+    const redirectUri = `${proto}://${host}/api/filestore/auth/callback`
+    sweepOauthStates()
+    const state = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+    oauthStates.set(state, { index, entryId: current.id, redirectUri, startedAt: Date.now() })
+    const url = new URL(descriptor.authorizeUrl)
+    url.searchParams.set('response_type', 'code')
+    url.searchParams.set('client_id', clientId)
+    url.searchParams.set('redirect_uri', redirectUri)
+    url.searchParams.set('state', state)
+    if (typeof descriptor.scope === 'string') url.searchParams.set('scope', descriptor.scope)
+    if (typeof descriptor.tokenAccessType === 'string') url.searchParams.set('token_access_type', descriptor.tokenAccessType)
+    return { status: 200, body: { url: url.toString(), redirectUri } }
+  }
+
+  /** Finish a browser OAuth handshake and store the refresh token on the host. */
+  const browserAuthCallback = async request => {
+    const url = new URL(request.url ?? '/', 'http://localhost')
+    const state = url.searchParams.get('state') ?? ''
+    const code = url.searchParams.get('code') ?? ''
+    const record = oauthStates.get(state)
+    if (record === undefined) return { status: 400, body: { error: 'неизвестный или просроченный state', code: 'FILESTORE_BAD_STATE' } }
+    oauthStates.delete(state)
+    const providers = read()
+    const current = normalizeEntry(providers[record.index], record.index)
+    const descriptor = OAUTH_PROVIDERS[current.type]
+    const clientId = current.options?.clientId
+    const store = credentialsOf()
+    const resolved = typeof store?.resolve === 'function' ? await store.resolve(makeCredentialRef(`${current.id}-client`)).catch(() => undefined) : undefined
+    const clientSecret = typeof resolved === 'string' ? resolved : resolved?.value
+    if (typeof clientSecret !== 'string' || clientSecret === '') return { status: 400, body: { error: 'нет client_secret в credentials', code: 'FILESTORE_NO_CLIENT_SECRET' } }
+    const form = new URLSearchParams({ grant_type: 'authorization_code', code, client_id: clientId, client_secret: clientSecret, redirect_uri: record.redirectUri })
+    const tokenResponse = await oauthTransport.fetch(descriptor.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form })
+    const tokenBody = await tokenResponse.json().catch(() => ({}))
+    if (!tokenResponse.ok || typeof tokenBody.access_token !== 'string') return { status: 400, body: { error: tokenBody?.error_description ?? tokenBody?.error ?? 'провайдер не выдал токен', code: 'FILESTORE_OAUTH_FAILED' } }
+    const credential = typeof tokenBody.refresh_token === 'string'
+      ? JSON.stringify({ accessToken: tokenBody.access_token, refreshToken: tokenBody.refresh_token, expiresAt: Date.now() + Number(tokenBody.expires_in ?? 14_400) * 1000 })
+      : tokenBody.access_token
+    if (typeof store?.set === 'function') await store.set(current.credentialRef, credential)
+    return { status: 200, body: { connected: true, id: current.id } }
+  }
+
   /**
    * Device handshake: ask the provider for a user code and start polling on the
    * host, so the flow survives a page reload and a restart.
@@ -1240,7 +1294,7 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     return { status: 200, body: { status: record.done === true ? record.status : 'pending', ...(record.error === undefined ? {} : { error: record.error }) } }
   }
 
-  return { list, save, remove, test, primary, deviceStart, devicePoll }
+  return { list, save, remove, test, primary, browserAuthStart, browserAuthCallback, deviceStart, devicePoll }
 }
 
 /**
@@ -1265,7 +1319,7 @@ export function registerFilestoreRoutes(connection, api) {
     fetch: async request => {
       try {
         const body = methods.includes('POST') && request.method === 'POST' ? await readJson(request) : {}
-        const result = await run(body)
+        const result = await run(body, request)
         return json(result.status, result.body)
       } catch (error) {
         return json(400, { error: String(error?.message ?? error), code: error?.code ?? 'FILESTORE_ERROR' })
@@ -1280,6 +1334,8 @@ export function registerFilestoreRoutes(connection, api) {
     route('/api/filestore/providers/primary', ['POST'], body => api.primary(body)),
     route('/api/filestore/device/start', ['POST'], body => api.deviceStart(body)),
     route('/api/filestore/device/poll', ['POST'], body => api.devicePoll(body)),
+    route('/api/filestore/auth/start', ['POST'], (body, request) => api.browserAuthStart(body, request)),
+    route('/api/filestore/auth/callback', ['GET'], (_body, request) => api.browserAuthCallback(request)),
   ]
 }
 

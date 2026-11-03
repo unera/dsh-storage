@@ -92,7 +92,7 @@ function call(handler, { method = 'GET', url, body }) {
   })
 }
 
-test('seven tools register, plus one admin route', async () => {
+test('seven tools register, plus the admin routes', async () => {
   const { ctx, record } = await boot()
   try {
     assert.equal(record.tools.length, 7)
@@ -102,7 +102,9 @@ test('seven tools register, plus one admin route', async () => {
     assert.deepEqual(record.configured, [{ auto: true }])
     // Seven exact routes under /api, which the host admits only for its owner.
     assert.deepEqual(record.routes.map(route => route.path).sort(), [
-      '/api/filestore/device/poll',
+      '/api/filestore/auth/callback',
+       '/api/filestore/auth/start',
+       '/api/filestore/device/poll',
       '/api/filestore/device/start',
       '/api/filestore/providers',
       '/api/filestore/providers/delete',
