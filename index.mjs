@@ -120,6 +120,24 @@ export function makeEntryId(index) {
   return `st-${String(index + 1).padStart(4, '0')}`
 }
 
+/**
+ * An id that is free right now.
+ *
+ * Numbering by list length reused the id of a deleted entry, and two entries then
+ * shared one credential reference — one token for two storages.
+ *
+ * @param existing - ids already in use.
+ * @returns an unused `st-` id.
+ */
+export function nextEntryId(existing) {
+  const taken = new Set((existing ?? []).map(entry => (typeof entry === 'string' ? entry : entry?.id)))
+  for (let index = 0; index < 10000; index += 1) {
+    const candidate = makeEntryId(index)
+    if (!taken.has(candidate)) return candidate
+  }
+  return `st-${Math.random().toString(36).slice(2, 8)}`
+}
+
 /** Credential reference derived from an entry id, never stored in `options`. */
 export function makeCredentialRef(id) {
   return credentialRef(`DSH_FILESTORE_${String(id).toUpperCase().replaceAll('-', '_')}`)
@@ -725,15 +743,30 @@ export function createStorageTools(filestore) {
       },
       async execute(args) {
         const driver = filestore.driver(args.id)
-        const stream = await driver.get(args.key)
-        const buffer = await readAll(stream)
+        const key = normalizeKey(args.key)
+        const stream = await driver.get(key)
+        // Read only what is returned: buffering a multi-gigabyte file to then cut
+        // it to 256 KiB is how a plugin takes the host down with OOM.
+        const chunks = []
+        let size = 0
+        for await (const chunk of stream) {
+          chunks.push(chunk)
+          size += chunk.length
+          if (size >= MAX_READ_BYTES) {
+            stream.destroy?.()
+            break
+          }
+        }
+        const buffer = Buffer.concat(chunks)
         const slice = buffer.subarray(0, MAX_READ_BYTES)
+        const info = size >= MAX_READ_BYTES ? await driver.stat(key).catch(() => undefined) : undefined
+        const total = info?.size ?? size
         return {
           storage: driver.id,
-          key: normalizeKey(args.key),
+          key,
           content: slice.toString('utf8'),
-          size: buffer.length,
-          ...(buffer.length > slice.length ? { truncated: true } : {}),
+          size: total,
+          ...(total > slice.length ? { truncated: true } : {}),
         }
       },
     }),
@@ -1074,6 +1107,8 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
     const value = descriptor?.value
     return Array.isArray(value?.providers) ? value.providers.map(entry => ({ ...entry })) : []
   }
+  // Awaited by every caller: a rejected settings update is an unhandled rejection,
+  // and an unhandled rejection ends the process.
   const write = providers => settings.update(SETTINGS_NAMESPACE, { providers })
   const indexOf = (providers, raw) => {
     const index = Number(raw)
@@ -1123,7 +1158,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         const provided = typeof body?.id === 'string' && /^st-[a-z0-9]{4,16}$/i.test(body.id) && !providers.some(entry => entry?.id === body.id)
           ? body.id
           : undefined
-        const candidate = normalizeEntry({ ...body, id: provided ?? makeEntryId(providers.length) }, providers.length)
+        const candidate = normalizeEntry({ ...body, id: provided ?? nextEntryId(providers) }, providers.length)
         if (candidate === undefined) return json(response, 400, { error: `unknown storage type ${JSON.stringify(body?.type)}`, code: 'FILESTORE_UNSUPPORTED' })
         if (body?.secret !== undefined && String(body.secret) !== '') {
           const store = credentialsOf()
@@ -1137,7 +1172,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         }
         const next = [...providers, { ...candidate }]
         if (body?.role === 'primary') for (const entry of next) if (entry.id !== candidate.id) entry.role = 'secondary'
-        write(next)
+        await write(next)
         return json(response, 201, { provider: candidate })
       }
 
@@ -1401,7 +1436,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           const next = [...providers]
           next[index] = merged
           if (body?.role === 'primary') for (const [position, entry] of next.entries()) if (position !== index) entry.role = 'secondary'
-          write(next)
+          await write(next)
           return json(response, 200, { provider: merged })
         }
 
@@ -1409,7 +1444,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           if (current.role === 'primary' && providers.length > 1) {
             return json(response, 409, { error: 'назначьте другое хранилище основным перед удалением', code: 'FILESTORE_PRIMARY_IN_USE' })
           }
-          write(providers.filter((_, position) => position !== index))
+          await write(providers.filter((_, position) => position !== index))
           return json(response, 200, { deleted: true })
         }
 
@@ -1420,7 +1455,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
 
         if (request.method === 'POST' && parts[2] === 'primary') {
           const next = providers.map((entry, position) => ({ ...entry, role: position === index ? 'primary' : 'secondary' }))
-          write(next)
+          await write(next)
           return json(response, 200, { primary: current.id })
         }
       }

@@ -4,14 +4,14 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools } from '../index.mjs'
+import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools, nextEntryId } from '../index.mjs'
 
 /**
  * Boot the plugin for real: a genuine cordis Context with the services it injects
  * stubbed out. `ctx.start()` is what makes `inject` callbacks run, so this checks
  * the actual wiring rather than a hand-rolled imitation of it.
  */
-async function boot({ providers = [], resolveValue = undefined } = {}) {
+async function boot({ providers = [], resolveValue = undefined, failWrites = false } = {}) {
   const ctx = new Context()
   const record = { tools: [], sections: [], routes: [], configured: [], document: { providers } }
   ctx.provide('tools', { register: tool => record.tools.push(tool) })
@@ -22,7 +22,10 @@ async function boot({ providers = [], resolveValue = undefined } = {}) {
   ctx.provide('settings', {
     configure: options => record.configured.push(options),
     describe: () => [{ ns: SETTINGS_NAMESPACE, value: record.document }],
-    update: async (ns, value) => { record.document = { ...record.document, ...value } },
+    update: async (ns, value) => {
+      if (failWrites) throw new Error('settings write failed')
+      record.document = { ...record.document, ...value }
+    },
   })
   ctx.provide('webServer', { register: route => { record.routes.push(route); return () => {} } })
   ctx.provide('credentials', {
@@ -221,4 +224,28 @@ test('storage_read puts the file content into the render', () => {
   const blocks = read.output.render({ key: 'a.txt' }, { storage: 'st-0001', key: 'a.txt', content: 'тело файла', size: 20 })
   assert.equal(blocks.length, 1)
   assert.match(blocks[0].text, /тело файла/, 'the model only sees the render, so the content must be in it')
+})
+
+test('a rejected settings update answers 500 instead of killing the process', async () => {
+  const { ctx, record } = await boot({ providers: [{ id: 'st-0001', type: 'local', options: { root: '/tmp' } }], failWrites: true })
+  try {
+    const response = await call(record.routes[0].handler, {
+      method: 'POST',
+      url: '/__fs/providers',
+      body: { type: 'local', options: { root: '/tmp' } },
+    })
+    assert.equal(response.status, 400)
+    // The point is that the await chain caught it: an unhandled rejection would
+    // have ended the process instead of producing this answer.
+    assert.equal(typeof response.body.code, 'string')
+  } finally {
+    await ctx.stop?.()
+  }
+})
+
+test('an id is never reused after a deletion', () => {
+  const tools = createStorageTools({ entries: () => [], status: () => ({}), driver: () => ({}) })
+  assert.equal(tools.length, 7)
+  assert.equal(nextEntryId([{ id: 'st-0001' }, { id: 'st-0003' }]), 'st-0002')
+  assert.equal(nextEntryId([]), 'st-0001')
 })
