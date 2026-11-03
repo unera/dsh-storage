@@ -40,6 +40,9 @@ import {
   SELF_SECTION_NAME, collectCredentialRefs, credentialsDocument, finalizeSelfSection, prepareSelfSection,
   providerClientRef, resolveCredentialRefs, sanitizeConfigDocument,
 } from './selfbackup.mjs'
+import {
+  TEST_DURATION_MS, TEST_RESTORE_MD, TEST_SECTION_NAME, installTestHook, prepareTestSection, spawnTestChild,
+} from './testhook.mjs'
 
 /** Stable Loader identity. */
 export const name = 'dsh-storage'
@@ -55,6 +58,11 @@ export {
 export {
   SELF_SECTION_NAME, collectCredentialRefs, credentialsDocument, finalizeSelfSection, prepareSelfSection,
   providerClientRef, resolveCredentialRefs, sanitizeConfigDocument,
+}
+
+// Re-export the test participant surface.
+export {
+  TEST_DURATION_MS, TEST_RESTORE_MD, TEST_SECTION_NAME, installTestHook, prepareTestSection, spawnTestChild,
 }
 
 /** Events the backup engine dispatches on the plugin context. */
@@ -1989,6 +1997,11 @@ export function apply(ctx, config = {}) {
       backups: readBackups(),
     })
   })
+
+  // Built-in test participant for GUI diagnostics of the hooks/status flow.
+  // Always on for now: it adds a `test` section whose child simulates 30s of
+  // work and reports ok, so an operator can watch prepare/start/section/polling.
+  installTestHook(ctx)
 
   // Cron scheduler. There is no host cron service, so the plugin ticks once a
   // minute and runs any backup whose `schedule` matches the current minute.

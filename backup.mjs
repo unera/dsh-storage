@@ -664,7 +664,7 @@ export async function rotateBackups(driver, directory, name, keep) {
  * The rewrite signal is the inode: an atomic temp-file + rename replaces the
  * inode, immune to filesystem clock granularity.
  */
-export function classifySection({ name, directory, beforeIno, thrown, settled, timedOut }) {
+export function classifySection({ name, directory, beforeIno, thrown, settled, timedOut, delegated = false }) {
   const status = readSectionStatus(directory)
   const pids = Array.isArray(status?.pids) ? status.pids : []
   const rewrote = !status.missing && status.ino !== undefined && status.ino !== beforeIno
@@ -682,7 +682,13 @@ export function classifySection({ name, directory, beforeIno, thrown, settled, t
     if (timedOut) return { name, outcome: 'timeout', message: 'section exceeded its timeout', pids, status: status.status }
     return { name, outcome: 'running', pids, status: status.status }
   }
-  // Never rewritten: the handler finished (settled) or the deadline elapsed.
+  // Never rewritten. When backup-start handed the section to a child process
+  // (delegated), the section handler may return without touching status.json —
+  // the child owns it — so only the deadline decides "no status update".
+  if (delegated) {
+    if (timedOut) return { name, outcome: 'no-status-update', message: 'receiver did not rewrite status.json', pids }
+    return { name, outcome: 'running', pids }
+  }
   if (settled || timedOut) {
     return { name, outcome: 'no-status-update', message: 'receiver did not rewrite status.json', pids }
   }
@@ -697,7 +703,7 @@ export function classifySection({ name, directory, beforeIno, thrown, settled, t
  *
  * @returns a classified section result (see {@link classifySection}).
  */
-export async function processSection(ctx, { directory, section, timeoutMs, pollIntervalMs = POLL_INTERVAL_MS, sleep = defaultSleep } = {}) {
+export async function processSection(ctx, { directory, section, timeoutMs, pollIntervalMs = POLL_INTERVAL_MS, sleep = defaultSleep, delegated = false } = {}) {
   const beforeIno = readSectionStatus(directory).ino
   const controller = new AbortController()
   let thrown
@@ -707,7 +713,7 @@ export async function processSection(ctx, { directory, section, timeoutMs, pollI
   const deadline = Date.now() + timeoutMs
   for (;;) {
     const timedOut = Date.now() >= deadline
-    const result = classifySection({ name: section, directory, beforeIno, thrown, settled, timedOut })
+    const result = classifySection({ name: section, directory, beforeIno, thrown, settled, timedOut, delegated })
     if (result.outcome !== 'running') {
       if (timedOut) controller.abort()
       return result
@@ -776,7 +782,7 @@ export async function runBackup(ctx, entry, filestore, resolveSecret, options = 
       const hookPids = normalizePids(dispatchBackupStart(ctx, name, directory))
       for (const pid of hookPids) startPids.add(pid)
       atomicWriteStatus(directory, { status: 'running', pids: hookPids })
-      const result = await processSection(ctx, { directory, section: name, timeoutMs, pollIntervalMs, sleep })
+      const result = await processSection(ctx, { directory, section: name, timeoutMs, pollIntervalMs, sleep, delegated: hookPids.length > 0 })
       details.push(result)
       if (result.outcome !== 'ok') {
         const pids = [...new Set([...startPids, ...collectPids(workspace)])]
