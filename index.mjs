@@ -864,6 +864,41 @@ export const oauthTransport = { fetch: (...args) => fetch(...args) }
 export const deviceStates = new Map()
 
 /**
+ * The handshake carried inside the state string.
+ *
+ * Server memory is the wrong place for it: a host restart wiped the pending
+ * handshake, and the browser then reported "expired" for a code the user had
+ * already confirmed. Encoding the device code into the state makes the flow
+ * survive a restart, and it holds nothing secret — the device code is useless
+ * without the application secret, which stays in the credential store.
+ *
+ * @param record - handshake fields to encode.
+ * @returns an opaque state string.
+ */
+export function encodeDeviceState(record) {
+  const payload = { e: record.entryId, c: record.clientId, d: record.deviceCode, x: record.expiresAt, t: record.tokenUrl }
+  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
+}
+
+/** Read a state string back; `undefined` when it is not one of ours. */
+export function decodeDeviceState(state) {
+  try {
+    const payload = JSON.parse(Buffer.from(String(state), 'base64url').toString('utf8'))
+    if (typeof payload?.e !== 'string' || typeof payload?.d !== 'string' || typeof payload?.c !== 'string') return undefined
+    return {
+      entryId: payload.e,
+      clientId: payload.c,
+      deviceCode: payload.d,
+      expiresAt: Number(payload.x ?? 0),
+      tokenUrl: typeof payload.t === 'string' ? payload.t : OAUTH_PROVIDERS.yadisk.tokenUrl,
+      credentialRef: makeCredentialRef(payload.e),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Exchange the device code for a token once.
  *
  * @param record - the stored handshake.
@@ -1074,7 +1109,6 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
             code: 'FILESTORE_DEVICE_FLOW_FAILED',
           })
         }
-        const state = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
         const interval = Number(answerBody.interval ?? 5)
         const expiresIn = Number(answerBody.expires_in ?? 300)
         const record = {
@@ -1088,8 +1122,9 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           status: 'pending',
           done: false,
         }
+        const state = encodeDeviceState(record)
         deviceStates.set(state, record)
-        deviceLog(ctx, `device/start entry=${entryId} state=${state} userCode=${answerBody.user_code} interval=${interval}s`)
+        deviceLog(ctx, `device/start entry=${entryId} userCode=${answerBody.user_code} interval=${interval}s`)
         startDevicePoller(record, credentialsOf(), ctx)
         return json(response, 200, {
           state,
@@ -1106,7 +1141,21 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         const body = await readBody(request)
         const state = String(body?.state ?? '')
         const record = deviceStates.get(state)
-        if (record === undefined) return json(response, 200, { status: 'expired' })
+        if (record === undefined) {
+          // No live record: the host restarted. The state still carries everything
+          // needed, so finish the exchange here instead of calling it expired.
+          const decoded = decodeDeviceState(state)
+          if (decoded === undefined) return json(response, 200, { status: 'expired' })
+          if (Date.now() > decoded.expiresAt) return json(response, 200, { status: 'expired' })
+          let outcome
+          try {
+            outcome = await exchangeDeviceCode(decoded, credentialsOf())
+          } catch (error) {
+            outcome = { status: 'error', error: String(error?.message ?? error) }
+          }
+          if (outcome.status !== 'pending') deviceLog(ctx, `device/poll(stateless) entry=${decoded.entryId} ${outcome.status}`)
+          return json(response, 200, { status: outcome.status, ...(outcome.error === undefined ? {} : { error: outcome.error }) })
+        }
         if (record.done === true && record.status === 'ok') deviceStates.delete(state)
         return json(response, 200, {
           status: record.done === true ? record.status : 'pending',

@@ -182,3 +182,23 @@ test('the application secret is stored apart from the token and sent on exchange
     await ctx.stop?.()
   }
 })
+
+test('a handshake survives a host restart: the state carries the device code', async () => {
+  deviceStates.clear()
+  const { ctx, handler, record } = await boot([])
+  const original = oauthTransport.fetch
+  oauthTransport.fetch = async (url) => (String(url).includes('/device/code')
+    ? new Response(JSON.stringify({ device_code: 'dev-5', user_code: 'cccc3333', verification_url: 'https://ya.ru/device', interval: 1, expires_in: 60 }), { status: 200 })
+    : new Response(JSON.stringify({ access_token: 'tok-5' }), { status: 200 }))
+  try {
+    const started = await call(handler, { method: 'POST', url: '/__fs/auth/device/start', body: { id: 'st-ijkl', clientId: 'app-5', type: 'yadisk' } })
+    // Simulate the restart: the in-memory record is gone, the browser keeps the state.
+    deviceStates.clear()
+    const answer = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+    assert.equal(answer.body.status, 'ok')
+    assert.equal(record.stored.get('DSH_FILESTORE_ST_IJKL'), 'tok-5')
+  } finally {
+    oauthTransport.fetch = original
+    await ctx.stop?.()
+  }
+})
