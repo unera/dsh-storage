@@ -31,6 +31,7 @@ import { createHash } from 'node:crypto'
 import { createS3Driver } from './s3.mjs'
 import { createWebdavDriver } from './webdav.mjs'
 import { createYandexDriver } from './yadisk.mjs'
+import { createDropboxDriver } from './dropbox.mjs'
 
 /** Stable Loader identity. */
 export const name = 'dsh-storage'
@@ -56,7 +57,7 @@ export const MAX_READ_BYTES = 256 * 1024
 export const KEEP_FILE = '.dsh-storage-keep'
 
 /** Driver types this build can actually run. */
-export const PROVIDER_TYPES = Object.freeze(['local', 's3', 'webdav', 'yadisk'])
+export const PROVIDER_TYPES = Object.freeze(['local', 's3', 'webdav', 'yadisk', 'dropbox'])
 
 /**
  * What each type can do. The UI asks before drawing a button, and the host
@@ -73,6 +74,9 @@ export const CAPABILITIES = Object.freeze({
     put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
   }),
   yadisk: Object.freeze({
+    put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
+  }),
+  dropbox: Object.freeze({
     put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
   }),
 })
@@ -436,6 +440,7 @@ export const DRIVERS = Object.freeze({
   s3: createS3Driver,
   webdav: createWebdavDriver,
   yadisk: createYandexDriver,
+  dropbox: createDropboxDriver,
 })
 
 /** Map a Node fs error onto the storage vocabulary. */
@@ -512,7 +517,8 @@ export class Filestore extends Service {
       return typeof resolved === 'string' ? resolved : resolved.value
     }
     const resolveSecret = () => resolveCredential(entry.credentialRef)
-    return factory(entry, { resolveSecret })
+    const resolveClientSecret = () => resolveCredential(makeCredentialRef(`${entry.id}-client`))
+    return factory(entry, { resolveSecret, resolveClientSecret })
   }
 
   /** Last known status; never touches the network. */
@@ -885,6 +891,12 @@ export const OAUTH_PROVIDERS = {
     deviceCodeUrl: 'https://oauth.yandex.ru/device/code',
     verificationUrl: 'https://oauth.yandex.ru/device',
     scope: 'cloud_api:disk.read cloud_api:disk.write',
+  },
+  dropbox: {
+    label: 'Dropbox',
+    authorizeUrl: 'https://www.dropbox.com/oauth2/authorize',
+    tokenUrl: 'https://api.dropboxapi.com/oauth2/token',
+    tokenAccessType: 'offline',
   },
 }
 
@@ -1503,6 +1515,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           url.searchParams.set('redirect_uri', redirectUri)
           url.searchParams.set('state', state)
           if (typeof descriptor.scope === 'string') url.searchParams.set('scope', descriptor.scope)
+           if (typeof descriptor.tokenAccessType === 'string') url.searchParams.set('token_access_type', descriptor.tokenAccessType)
           return json(response, 200, { url: url.toString(), redirectUri })
         }
 
@@ -1528,7 +1541,12 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           if (!tokenResponse.ok || typeof tokenBody.access_token !== 'string') {
             return json(response, 400, { error: tokenBody?.error_description ?? 'провайдер не выдал токен', code: 'FILESTORE_OAUTH_FAILED' })
           }
-          if (typeof store?.set === 'function') await store.set(current.credentialRef, tokenBody.access_token)
+          if (typeof store?.set === 'function') {
+             const credential = typeof tokenBody.refresh_token === 'string'
+               ? JSON.stringify({ accessToken: tokenBody.access_token, refreshToken: tokenBody.refresh_token, expiresAt: Date.now() + Number(tokenBody.expires_in ?? 14_400) * 1000 })
+               : tokenBody.access_token
+             await store.set(current.credentialRef, credential)
+           }
           response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
           response.end('<!doctype html><meta charset="utf-8"><title>Готово</title><p>Хранилище подключено. Закройте окно и вернитесь в настройки.</p>')
           return undefined

@@ -58,7 +58,11 @@ var DICTIONARIES = {
     "clientId": "Application id",
     "clientIdHint": "From the app registered at oauth.yandex.ru",
     "clientSecret": "Application secret",
-    "clientSecretHint": "The app secret from oauth.yandex.com; it stays in the credential store",
+    "clientSecretHint": "The app secret; it stays in the credential store",
+    "dropboxClientIdHint": "App key from the Dropbox App Console",
+    "dropboxConnect": "Connect Dropbox",
+    "dropboxTokenHint": "Optional: paste an existing access or refresh token",
+    "browserSaveFirst": "Save the storage first, then connect it in a new browser tab",
     "clientIdNeeded": "This button needs the application id: Yandex will not hand out a device code without it. Register an app at oauth.yandex.com, copy its ClientID into the field above, and press again.",
     "token": "OAuth token",
     "deviceConnect": "Connect with a code",
@@ -127,7 +131,11 @@ var DICTIONARIES = {
     "clientId": "\u0418\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F",
     "clientIdHint": "\u0418\u0437 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F, \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u043E\u0433\u043E \u043D\u0430 oauth.yandex.ru",
     "clientSecret": "\u0421\u0435\u043A\u0440\u0435\u0442 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F",
-    "clientSecretHint": "Secret \u0438\u0437 \u0441\u0432\u043E\u0439\u0441\u0442\u0432 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043D\u0430 oauth.yandex.com; \u0445\u0440\u0430\u043D\u0438\u0442\u0441\u044F \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u0441\u0435\u043A\u0440\u0435\u0442\u043E\u0432",
+    "clientSecretHint": "\u0421\u0435\u043A\u0440\u0435\u0442 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F; \u0445\u0440\u0430\u043D\u0438\u0442\u0441\u044F \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u0441\u0435\u043A\u0440\u0435\u0442\u043E\u0432",
+    "dropboxClientIdHint": "App key \u0438\u0437 Dropbox App Console",
+    "dropboxConnect": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C Dropbox",
+    "dropboxTokenHint": "\u041D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E: \u043C\u043E\u0436\u043D\u043E \u0432\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0433\u043E\u0442\u043E\u0432\u044B\u0439 access \u0438\u043B\u0438 refresh token",
+    "browserSaveFirst": "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435, \u043F\u043E\u0442\u043E\u043C \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u0435 \u0435\u0433\u043E \u0432 \u043D\u043E\u0432\u043E\u0439 \u0432\u043A\u043B\u0430\u0434\u043A\u0435",
     "clientIdNeeded": "\u041A\u043D\u043E\u043F\u043A\u0435 \u043D\u0443\u0436\u0435\u043D \u0438\u0434\u0435\u043D\u0442\u0438\u0444\u0438\u043A\u0430\u0442\u043E\u0440 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F: \u0431\u0435\u0437 \u043D\u0435\u0433\u043E \u042F\u043D\u0434\u0435\u043A\u0441 \u043D\u0435 \u0432\u044B\u0434\u0430\u0451\u0442 \u043A\u043E\u0434 \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430. \u0417\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u0443\u0439\u0442\u0435 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u0435 \u043D\u0430 oauth.yandex.com, \u0432\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u0435\u0433\u043E ClientID \u0432 \u043F\u043E\u043B\u0435 \u0432\u044B\u0448\u0435 \u0438 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \u0441\u043D\u043E\u0432\u0430.",
     "token": "OAuth-\u0442\u043E\u043A\u0435\u043D",
     "deviceConnect": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u043F\u043E \u043A\u043E\u0434\u0443",
@@ -182,13 +190,15 @@ var TYPE_LABELS = {
   local: "\u041A\u0430\u0442\u0430\u043B\u043E\u0433 \u043D\u0430 \u044D\u0442\u043E\u043C \u0445\u043E\u0441\u0442\u0435",
   s3: "S3-\u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439",
   webdav: "WebDAV",
-  yadisk: "\u042F\u043D\u0434\u0435\u043A\u0441.\u0414\u0438\u0441\u043A"
+  yadisk: "\u042F\u043D\u0434\u0435\u043A\u0441.\u0414\u0438\u0441\u043A",
+  dropbox: "Dropbox"
 };
 var ICONS = {
   local: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#8aa0b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'),
   s3: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#e0a23c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>'),
   webdav: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#5aa9e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 .6-8A6 6 0 0 0 6 11a3.5 3.5 0 0 0 .5 7z"/></svg>'),
   yadisk: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#fc3f1d"/><path d="M9 18V9.2c0-2 1.3-3.2 3.3-3.2H15v2.4h-2.2c-.8 0-1.2.4-1.2 1.2V11l3.6 7h-2.7l-3-6v6z" fill="#fff"/></svg>'),
+  dropbox: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#0061ff" d="M6 3l6 4-6 4-4-4zm12 0l4 4-4 4-6-4zm-6 9l6-4 4 4-6 4zm-6-4l6 4-4 4-6-4zm6 5l4 3-4 3-4-3z"/></svg>'),
   edit: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16z"/></svg>'),
   save: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>'),
   copy: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>'),
@@ -395,7 +405,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
   const optionsFor = () => {
     if (type === "local") return { root: root.trim() };
     if (type === "webdav") return { baseUrl: baseUrl.trim() };
-    if (type === "yadisk") return { ...clientId.trim() === "" ? {} : { clientId: clientId.trim() } };
+    if (type === "yadisk" || type === "dropbox") return { ...clientId.trim() === "" ? {} : { clientId: clientId.trim() } };
     return { bucket: bucket.trim(), ...region.trim() === "" ? {} : { region: region.trim() }, ...endpoint.trim() === "" ? {} : { endpoint: endpoint.trim() } };
   };
   const secretFor = () => {
@@ -403,7 +413,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
       if (username.trim() === "" && password.trim() === "") return void 0;
       return JSON.stringify({ username: username.trim(), password: password.trim() });
     }
-    if (type === "yadisk") return token.trim() === "" ? void 0 : token.trim();
+    if (type === "yadisk" || type === "dropbox") return token.trim() === "" ? void 0 : token.trim();
     return secret.trim() === "" ? void 0 : secret.trim();
   };
   const deviceReady = true;
@@ -447,6 +457,23 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
         }
       };
       setTimeout(poll, intervalMs);
+    } catch (problem) {
+      setError(problem.message);
+    }
+  };
+  const startBrowser = async () => {
+    setError(null);
+    if (!editing) {
+      setError(t("browserSaveFirst"));
+      return;
+    }
+    if (clientId.trim() === "") {
+      setError(t("clientIdNeeded"));
+      return;
+    }
+    try {
+      const started = await request(`/providers/${entryId}/auth/start`, { method: "POST" });
+      window.open(started.url, "_blank", "noopener,noreferrer");
     } catch (problem) {
       setError(problem.message);
     }
@@ -512,6 +539,25 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
           (0, import_jsx_runtime.jsx)("input", { style: styles.input, type: "password", value: password, autoComplete: "new-password", onChange: (event) => setPassword(event.target.value) }),
           (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: editing ? t("secretKeep") : t("passwordHint") })
         ] })
+      ] })
+    ] }) : type === "dropbox" ? (0, import_jsx_runtime.jsxs)("div", { children: [
+      (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
+        (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+          (0, import_jsx_runtime.jsx)("span", { children: t("clientId") }),
+          (0, import_jsx_runtime.jsx)(LineField, { value: clientId, placeholder: "App key", onChange: setClientId }),
+          (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("dropboxClientIdHint") })
+        ] }),
+        (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+          (0, import_jsx_runtime.jsx)("span", { children: t("clientSecret") }),
+          (0, import_jsx_runtime.jsx)(LineField, { value: clientSecret, onChange: setClientSecret }),
+          (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: editing ? t("secretKeep") : t("clientSecretHint") })
+        ] })
+      ] }),
+      (0, import_jsx_runtime.jsx)("div", { style: { margin: "4px 0 12px" }, children: (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: startBrowser, children: t("dropboxConnect") }) }),
+      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+        (0, import_jsx_runtime.jsx)("span", { children: t("token") }),
+        (0, import_jsx_runtime.jsx)(LineField, { value: token, onChange: setToken }),
+        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("dropboxTokenHint") })
       ] })
     ] }) : type === "yadisk" ? (0, import_jsx_runtime.jsxs)("div", { children: [
       (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [

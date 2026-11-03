@@ -13,6 +13,7 @@ const TYPE_LABELS = {
   s3: 'S3-совместимый',
   webdav: 'WebDAV',
   yadisk: 'Яндекс.Диск',
+  dropbox: 'Dropbox',
 }
 
 /** Inline SVG marks, so the panel never fetches an image from outside. */
@@ -21,6 +22,7 @@ const ICONS = {
   s3: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#e0a23c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>'),
   webdav: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#5aa9e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 0 0 .6-8A6 6 0 0 0 6 11a3.5 3.5 0 0 0 .5 7z"/></svg>'),
   yadisk: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#fc3f1d"/><path d="M9 18V9.2c0-2 1.3-3.2 3.3-3.2H15v2.4h-2.2c-.8 0-1.2.4-1.2 1.2V11l3.6 7h-2.7l-3-6v6z" fill="#fff"/></svg>'),
+  dropbox: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#0061ff" d="M6 3l6 4-6 4-4-4zm12 0l4 4-4 4-6-4zm-6 9l6-4 4 4-6 4zm-6-4l6 4-4 4-6-4zm6 5l4 3-4 3-4-3z"/></svg>'),
   edit: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16z"/></svg>'),
   save: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>'),
   copy: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>'),
@@ -257,7 +259,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
   const optionsFor = () => {
     if (type === 'local') return { root: root.trim() }
     if (type === 'webdav') return { baseUrl: baseUrl.trim() }
-    if (type === 'yadisk') return { ...(clientId.trim() === '' ? {} : { clientId: clientId.trim() }) }
+    if (type === 'yadisk' || type === 'dropbox') return { ...(clientId.trim() === '' ? {} : { clientId: clientId.trim() }) }
     return { bucket: bucket.trim(), ...(region.trim() === '' ? {} : { region: region.trim() }), ...(endpoint.trim() === '' ? {} : { endpoint: endpoint.trim() }) }
   }
 
@@ -270,7 +272,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
       if (username.trim() === '' && password.trim() === '') return undefined
       return JSON.stringify({ username: username.trim(), password: password.trim() })
     }
-    if (type === 'yadisk') return token.trim() === '' ? undefined : token.trim()
+    if (type === 'yadisk' || type === 'dropbox') return token.trim() === '' ? undefined : token.trim()
     return secret.trim() === '' ? undefined : secret.trim()
   }
 
@@ -328,6 +330,24 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
         }
       }
       setTimeout(poll, intervalMs)
+    } catch (problem) {
+      setError(problem.message)
+    }
+  }
+
+  const startBrowser = async () => {
+    setError(null)
+    if (!editing) {
+      setError(t('browserSaveFirst'))
+      return
+    }
+    if (clientId.trim() === '') {
+      setError(t('clientIdNeeded'))
+      return
+    }
+    try {
+      const started = await request(`/providers/${entryId}/auth/start`, { method: 'POST' })
+      window.open(started.url, '_blank', 'noopener,noreferrer')
     } catch (problem) {
       setError(problem.message)
     }
@@ -399,6 +419,27 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
             jsx('input', { style: styles.input, type: 'password', value: password, autoComplete: 'new-password', onChange: event => setPassword(event.target.value) }),
             jsx('span', { style: styles.hint, children: editing ? t('secretKeep') : t('passwordHint') }),
           ] }),
+        ] }),
+      ] })
+      : type === 'dropbox'
+      ? jsxs('div', { children: [
+        jsx('div', { style: styles.row, children: [
+          jsx('label', { style: styles.field, children: [
+            jsx('span', { children: t('clientId') }),
+            jsx(LineField, { value: clientId, placeholder: 'App key', onChange: setClientId }),
+            jsx('span', { style: styles.hint, children: t('dropboxClientIdHint') }),
+          ] }),
+          jsx('label', { style: styles.field, children: [
+            jsx('span', { children: t('clientSecret') }),
+            jsx(LineField, { value: clientSecret, onChange: setClientSecret }),
+            jsx('span', { style: styles.hint, children: editing ? t('secretKeep') : t('clientSecretHint') }),
+          ] }),
+        ] }),
+        jsx('div', { style: { margin: '4px 0 12px' }, children: jsx('button', { style: styles.button, disabled: busy, onClick: startBrowser, children: t('dropboxConnect') }) }),
+        jsx('label', { style: styles.field, children: [
+          jsx('span', { children: t('token') }),
+          jsx(LineField, { value: token, onChange: setToken }),
+          jsx('span', { style: styles.hint, children: t('dropboxTokenHint') }),
         ] }),
       ] })
       : type === 'yadisk'

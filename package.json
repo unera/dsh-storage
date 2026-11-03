@@ -1,6 +1,6 @@
 {
   "name": "@dr-co/dsh-storage",
-  "version": "0.1.11",
+  "version": "0.2.0",
   "description": "Remote disks for DeepSeek Harness: cloud storages a model can read and write, plus backups on top of them later",
   "type": "module",
   "main": "./index.mjs",
@@ -15,6 +15,7 @@
     "s3.mjs",
     "webdav.mjs",
     "yadisk.mjs",
+    "dropbox.mjs",
     "client.js",
     "cordis.patch.yml",
     "README.md",
