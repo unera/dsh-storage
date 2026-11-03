@@ -17,7 +17,12 @@ async function boot(providers) {
   ctx.provide('webServer', { register: route => { record.routes.push(route); return () => {} } })
   // The real host asks this service whether a request carries a signed session;
   // the stub says yes, a separate test drives the refusal.
-  ctx.provide('connection', { requestRejection: () => undefined })
+  // Both faces of the service the plugin uses: the route registry it mounts into,
+  // and the admission check it no longer has to perform itself.
+  ctx.provide('connection', {
+    requestRejection: () => undefined,
+    fetch: { register: route => { record.routes.push(route); return async () => {} } },
+  })
   ctx.provide('credentials', {
     resolve: async ref => (record.stored.has(String(ref)) ? { value: record.stored.get(String(ref)), source: 'file' } : undefined),
     set: async (ref, value) => { record.stored.set(String(ref), value) },
@@ -28,6 +33,25 @@ async function boot(providers) {
     await new Promise(resolve => setTimeout(resolve, 10))
   }
   return { ctx, record, handler: record.routes[0].handler }
+}
+
+
+/** Drive one exact /api route the way the host would: a Request in, a Response out. */
+async function callApi(record, target, extra = undefined) {
+  const spec = typeof target === 'string' ? { path: target, ...(extra ?? {}) } : target
+  const path = spec.path
+  const body = spec.body
+  const route = record.routes.find(item => item.path === path)
+  if (route === undefined) throw new Error(`no route ${path}`)
+  const verb = spec.method ?? (body === undefined ? 'GET' : 'POST')
+  const request = new Request(`https://dsh.example${path}`, {
+    method: verb,
+    headers: { 'content-type': 'application/json' },
+    body: verb === 'POST' ? JSON.stringify(body ?? {}) : undefined,
+  })
+  const response = await route.fetch(request)
+  const text = await response.text()
+  return { status: response.status, body: text === '' ? undefined : JSON.parse(text) }
 }
 
 function call(handler, { method = 'GET', url, body }) {
@@ -64,7 +88,7 @@ test('the device flow asks for a code, polls while pending, then stores the toke
     return new Response(JSON.stringify({ access_token: 'tok-1', token_type: 'bearer' }), { status: 200 })
   }
   try {
-    const started = await call(handler, { method: 'POST', url: '/__fs/providers/0/auth/device/start' })
+    const started = await callApi(record, { method: 'POST', path: '/api/filestore/device/start', body: { id: 'st-0009', clientId: 'app-1', type: 'yadisk' } })
     assert.equal(started.status, 200)
     assert.equal(started.body.userCode, 'h5nbcr6c')
     assert.equal(started.body.verificationUrl, 'https://oauth.yandex.com/device')
@@ -73,7 +97,7 @@ test('the device flow asks for a code, polls while pending, then stores the toke
     // The host polls on its own; wait for it to land instead of asking on demand.
     let confirmed
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      confirmed = await call(handler, { method: 'POST', url: '/__fs/providers/0/auth/device/poll', body: { state: started.body.state } })
+      confirmed = await callApi(record, { method: 'POST', path: '/api/filestore/device/poll', body: { state: started.body.state } })
       if (confirmed.body.status !== 'pending') break
       await new Promise(resolve => setTimeout(resolve, 50))
     }
@@ -88,12 +112,12 @@ test('the device flow asks for a code, polls while pending, then stores the toke
 
 test('an unknown state reports expired instead of calling the provider', async () => {
   deviceStates.clear()
-  const { ctx, handler } = await boot([ENTRY])
+  const { ctx, record } = await boot([ENTRY])
   const original = oauthTransport.fetch
   let called = 0
   oauthTransport.fetch = async () => { called += 1; return new Response('{}', { status: 200 }) }
   try {
-    const response = await call(handler, { method: 'POST', url: '/__fs/providers/0/auth/device/poll', body: { state: 'nope' } })
+    const response = await callApi(record, { method: 'POST', path: '/api/filestore/device/poll', body: { state: 'nope' } })
     assert.equal(response.body.status, 'expired')
     assert.equal(called, 0)
   } finally {
@@ -104,12 +128,12 @@ test('an unknown state reports expired instead of calling the provider', async (
 
 test('without a client id the flow is refused before any network call', async () => {
   deviceStates.clear()
-  const { ctx, handler } = await boot([{ id: 'st-0010', type: 'yadisk', options: {} }])
+  const { ctx, record } = await boot([{ id: 'st-0010', type: 'yadisk', options: {} }])
   const original = oauthTransport.fetch
   let called = 0
   oauthTransport.fetch = async () => { called += 1; return new Response('{}', { status: 200 }) }
   try {
-    const response = await call(handler, { method: 'POST', url: '/__fs/providers/0/auth/device/start' })
+    const response = await callApi(record, { method: 'POST', path: '/api/filestore/device/start', body: { id: 'st-0010', clientId: '', type: 'yadisk' } })
     assert.equal(response.status, 400)
     assert.equal(response.body.code, 'FILESTORE_NO_CLIENT_ID')
     assert.equal(called, 0)
@@ -127,9 +151,9 @@ test('the handshake works before the entry is saved, and the id survives the sav
     ? new Response(JSON.stringify({ device_code: 'dev-2', user_code: 'aaaa1111', verification_url: 'https://oauth.yandex.com/device', interval: 1, expires_in: 60 }), { status: 200 })
     : new Response(JSON.stringify({ access_token: 'tok-2' }), { status: 200 }))
   try {
-    const started = await call(handler, {
+    const started = await callApi(record, {
       method: 'POST',
-      url: '/__fs/auth/device/start',
+      path: '/api/filestore/device/start',
       body: { id: 'st-abcd', clientId: 'app-2', type: 'yadisk' },
     })
     assert.equal(started.status, 200)
@@ -137,7 +161,7 @@ test('the handshake works before the entry is saved, and the id survives the sav
 
     let confirmed
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      confirmed = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+      confirmed = await callApi(record, { method: 'POST', path: '/api/filestore/device/poll', body: { state: started.body.state } })
       if (confirmed.body.status !== 'pending') break
       await new Promise(resolve => setTimeout(resolve, 50))
     }
@@ -145,7 +169,7 @@ test('the handshake works before the entry is saved, and the id survives the sav
     // The token is already under the id the form will save with.
     assert.equal(record.stored.get('DSH_FILESTORE_ST_ABCD'), 'tok-2')
 
-    const created = await call(handler, { method: 'POST', url: '/__fs/providers', body: { id: 'st-abcd', type: 'yadisk', label: 'yandex', options: { clientId: 'app-2' } } })
+    const created = await callApi(record, { method: 'POST', path: '/api/filestore/providers/save', body: { id: 'st-abcd', type: 'yadisk', label: 'yandex', options: { clientId: 'app-2' } } })
     assert.equal(created.status, 201)
     assert.equal(created.body.provider.id, 'st-abcd')
   } finally {
@@ -167,13 +191,13 @@ test('the application secret is stored apart from the token and sent on exchange
   }
   try {
     // The panel saves the secret with the entry, not with the handshake.
-    await call(handler, { method: 'POST', url: '/__fs/providers', body: { id: 'st-efgh', type: 'yadisk', options: { clientId: 'app-3' }, clientSecret: 'sec-3' } })
+    await callApi(record, { method: 'POST', path: '/api/filestore/providers/save', body: { id: 'st-efgh', type: 'yadisk', options: { clientId: 'app-3' }, clientSecret: 'sec-3' } })
     assert.equal(record.stored.get('DSH_FILESTORE_ST_EFGH_CLIENT'), 'sec-3')
 
-    const started = await call(handler, { method: 'POST', url: '/__fs/auth/device/start', body: { id: 'st-efgh', clientId: 'app-3', type: 'yadisk' } })
+    const started = await callApi(record, { method: 'POST', path: '/api/filestore/device/start', body: { id: 'st-efgh', clientId: 'app-3', type: 'yadisk' } })
     let confirmed
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      confirmed = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+      confirmed = await callApi(record, { method: 'POST', path: '/api/filestore/device/poll', body: { state: started.body.state } })
       if (confirmed.body.status !== 'pending') break
       await new Promise(resolve => setTimeout(resolve, 50))
     }
@@ -194,10 +218,10 @@ test('a handshake survives a host restart: the state carries the device code', a
     ? new Response(JSON.stringify({ device_code: 'dev-5', user_code: 'cccc3333', verification_url: 'https://ya.ru/device', interval: 1, expires_in: 60 }), { status: 200 })
     : new Response(JSON.stringify({ access_token: 'tok-5' }), { status: 200 }))
   try {
-    const started = await call(handler, { method: 'POST', url: '/__fs/auth/device/start', body: { id: 'st-ijkl', clientId: 'app-5', type: 'yadisk' } })
+    const started = await callApi(record, { method: 'POST', path: '/api/filestore/device/start', body: { id: 'st-ijkl', clientId: 'app-5', type: 'yadisk' } })
     // Simulate the restart: the in-memory record is gone, the browser keeps the state.
     deviceStates.clear()
-    const answer = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+    const answer = await callApi(record, { method: 'POST', path: '/api/filestore/device/poll', body: { state: started.body.state } })
     assert.equal(answer.body.status, 'ok')
     assert.equal(record.stored.get('DSH_FILESTORE_ST_IJKL'), 'tok-5')
   } finally {
@@ -219,9 +243,9 @@ test('an unsaved entry still exchanges: the secret arrives with the handshake', 
   }
   try {
     // No provider entry is saved yet: the form only has the id it will save with.
-    const started = await call(handler, {
+    const started = await callApi(record, {
       method: 'POST',
-      url: '/__fs/auth/device/start',
+      path: '/api/filestore/device/start',
       body: { id: 'st-new1', clientId: 'app-9', clientSecret: 'sec-9', type: 'yadisk' },
     })
     assert.equal(started.status, 200)
@@ -229,7 +253,7 @@ test('an unsaved entry still exchanges: the secret arrives with the handshake', 
 
     let confirmed
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      confirmed = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+      confirmed = await callApi(record, { method: 'POST', path: '/api/filestore/device/poll', body: { state: started.body.state } })
       if (confirmed.body.status !== 'pending') break
       await new Promise(resolve => setTimeout(resolve, 50))
     }

@@ -3,7 +3,9 @@ import { jsx, jsxs } from 'react/jsx-runtime'
 import { DICTIONARIES, NS } from './locales.js'
 
 const SECTION_ID = 'storage'
-const API = '/__fs'
+// Under /api, where the host admits only an authenticated owner — the same gate
+// the settings pages sit behind.
+const API = '/api/filestore'
 
 /** Type ids are for the API; a person reads these. */
 const TYPE_LABELS = {
@@ -76,6 +78,7 @@ const styles = {
 
 async function request(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
+    credentials: 'same-origin',
     headers: { 'content-type': 'application/json' },
     ...options,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -284,7 +287,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
       return
     }
     try {
-      const started = await request('/auth/device/start', {
+      const started = await request('/device/start', {
         method: 'POST',
         // The secret goes with the handshake: an unsaved entry has nowhere to keep
         // it otherwise, and Yandex answers "Wrong client secret".
@@ -299,7 +302,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
           return
         }
         try {
-          const answer = await request('/auth/device/poll', { method: 'POST', body: { state: started.state } })
+          const answer = await request('/device/poll', { method: 'POST', body: { state: started.state } })
           if (answer.status === 'ok') {
             setDevice(current => current === null ? null : { ...current, status: 'ok' })
             setToken('')
@@ -338,8 +341,8 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
         ...(secretFor() === undefined ? {} : { secret: secretFor() }),
         ...(clientSecret.trim() === '' ? {} : { clientSecret: clientSecret.trim() }),
       }
-      if (editing) await request(`/providers/${initial.index}`, { method: 'PATCH', body: payload })
-      else await request('/providers', { method: 'POST', body: { ...payload, type, id: entryId } })
+      // One endpoint saves both ways: an id in the body means "update".
+      await request('/providers/save', { method: 'POST', body: { ...payload, type, id: entryId } })
       await onSaved()
     } catch (problem) {
       setError(problem.message)
@@ -578,7 +581,6 @@ export function StoragePage(props) {
     }
   }
 
-  const indexOf = id => providers.findIndex(provider => provider.id === id)
   /** The form showing right now: a new entry, or an existing one being edited. */
   const form = adding
     ? { key: 'new' }
@@ -629,12 +631,12 @@ export function StoragePage(props) {
           const before = providers.find(item => item.id === id)?.status?.checkedAt ?? null
           setCheckingId(id)
           return act(
-            async () => { await request(`/providers/${indexOf(id)}/test`, { method: 'POST' }) },
+            async () => { await request('/providers/test', { method: 'POST', body: { id } }) },
             { until: next => (next.find(item => item.id === id)?.status?.checkedAt ?? null) !== before },
           ).finally(() => setCheckingId(null))
         },
         onPrimary: id => act(
-          async () => { await request(`/providers/${indexOf(id)}/primary`, { method: 'POST' }) },
+          async () => { await request('/providers/primary', { method: 'POST', body: { id } }) },
           {
             // Show the switch immediately; the loop only waits for confirmation.
             optimistic: previous => previous.map(item => ({ ...item, role: item.id === id ? 'primary' : 'secondary' })),
@@ -645,7 +647,7 @@ export function StoragePage(props) {
         onRemove: id => {
           if (typeof window !== 'undefined' && typeof window.confirm === 'function' && !window.confirm(t('confirmRemove'))) return
           return act(
-            async () => { await request(`/providers/${indexOf(id)}`, { method: 'DELETE' }) },
+            async () => { await request('/providers/delete', { method: 'POST', body: { id } }) },
             {
               optimistic: previous => previous.filter(item => item.id !== id),
               until: next => next.every(item => item.id !== id),

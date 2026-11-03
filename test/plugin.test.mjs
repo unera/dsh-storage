@@ -30,7 +30,12 @@ async function boot({ providers = [], resolveValue = undefined, failWrites = fal
   ctx.provide('webServer', { register: route => { record.routes.push(route); return () => {} } })
   // The real host asks this service whether a request carries a signed session;
   // the stub says yes, a separate test drives the refusal.
-  ctx.provide('connection', { requestRejection: () => undefined })
+  // Both faces of the service the plugin uses: the route registry it mounts into,
+  // and the admission check it no longer has to perform itself.
+  ctx.provide('connection', {
+    requestRejection: () => undefined,
+    fetch: { register: route => { record.routes.push(route); return async () => {} } },
+  })
   ctx.provide('credentials', {
     resolve: async () => resolveValue,
     set: async () => {},
@@ -47,6 +52,25 @@ async function boot({ providers = [], resolveValue = undefined, failWrites = fal
 }
 
 /** Minimal HTTP request/response pair for the admin handler. */
+
+/** Drive one exact /api route the way the host would: a Request in, a Response out. */
+async function callApi(record, target, extra = undefined) {
+  const spec = typeof target === 'string' ? { path: target, ...(extra ?? {}) } : target
+  const path = spec.path
+  const body = spec.body
+  const route = record.routes.find(item => item.path === path)
+  if (route === undefined) throw new Error(`no route ${path}`)
+  const verb = spec.method ?? (body === undefined ? 'GET' : 'POST')
+  const request = new Request(`https://dsh.example${path}`, {
+    method: verb,
+    headers: { 'content-type': 'application/json' },
+    body: verb === 'POST' ? JSON.stringify(body ?? {}) : undefined,
+  })
+  const response = await route.fetch(request)
+  const text = await response.text()
+  return { status: response.status, body: text === '' ? undefined : JSON.parse(text) }
+}
+
 function call(handler, { method = 'GET', url, body }) {
   const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body))
   const request = {
@@ -76,8 +100,16 @@ test('seven tools register, plus one admin route', async () => {
       'storage_delete', 'storage_df', 'storage_list', 'storage_ls', 'storage_mkdir', 'storage_read', 'storage_write',
     ])
     assert.deepEqual(record.configured, [{ auto: true }])
-    assert.equal(record.routes.length, 1)
-    assert.equal(record.routes[0].path, ROUTE_PREFIX)
+    // Seven exact routes under /api, which the host admits only for its owner.
+    assert.deepEqual(record.routes.map(route => route.path).sort(), [
+      '/api/filestore/device/poll',
+      '/api/filestore/device/start',
+      '/api/filestore/providers',
+      '/api/filestore/providers/delete',
+      '/api/filestore/providers/primary',
+      '/api/filestore/providers/save',
+      '/api/filestore/providers/test',
+    ])
   } finally {
     await ctx.stop?.()
   }
@@ -104,28 +136,27 @@ test('the admin API lists, adds, checks and promotes a storage', async () => {
   try {
     const { ctx, record } = await boot({ providers: [{ id: 'st-0001', type: 'local', label: 'tmp', role: 'secondary', options: { root } }] })
     try {
-      const handler = record.routes[0].handler
 
-      const listed = await call(handler, { url: '/__fs/providers' })
+      const listed = await callApi(record, { path: '/api/filestore/providers' })
       assert.equal(listed.status, 200)
       assert.equal(listed.body.providers.length, 1)
       assert.equal(listed.body.providers[0].secretConfigured, false)
       assert.deepEqual(listed.body.types, ['local', 's3', 'webdav', 'yadisk'])
 
-      const created = await call(handler, {
+      const created = await callApi(record, {
         method: 'POST',
-        url: '/__fs/providers',
+        path: '/api/filestore/providers/save',
         body: { type: 'local', label: 'second', options: { root } },
       })
       assert.equal(created.status, 201)
       assert.equal(created.body.provider.label, 'second')
       assert.equal(record.document.providers.length, 2)
 
-      const tested = await call(handler, { method: 'POST', url: '/__fs/providers/0/test' })
+      const tested = await callApi(record, { method: 'POST', path: '/api/filestore/providers/test', body: { id: 'st-0001' } })
       assert.equal(tested.status, 200)
       assert.equal(tested.body.status.state, 'ok')
 
-      const promoted = await call(handler, { method: 'POST', url: '/__fs/providers/1/primary' })
+      const promoted = await callApi(record, { method: 'POST', path: '/api/filestore/providers/primary', body: { id: 'st-0002' } })
       assert.equal(promoted.status, 200)
       assert.deepEqual(record.document.providers.map(entry => entry.role), ['secondary', 'primary'])
     } finally {
@@ -146,11 +177,10 @@ test('the primary storage cannot be deleted while another one could take over', 
       ],
     })
     try {
-      const handler = record.routes[0].handler
-      const refused = await call(handler, { method: 'DELETE', url: '/__fs/providers/0' })
+      const refused = await callApi(record, { method: 'POST', path: '/api/filestore/providers/delete', body: { id: 'st-0001' } })
       assert.equal(refused.status, 409)
       assert.equal(refused.body.code, 'FILESTORE_PRIMARY_IN_USE')
-      const allowed = await call(handler, { method: 'DELETE', url: '/__fs/providers/1' })
+      const allowed = await callApi(record, { method: 'POST', path: '/api/filestore/providers/delete', body: { id: 'st-0002' } })
       assert.equal(allowed.status, 200)
       assert.equal(record.document.providers.length, 1)
     } finally {
@@ -164,7 +194,7 @@ test('the primary storage cannot be deleted while another one could take over', 
 test('a storage without credentials reports unauthorized instead of throwing', async () => {
   const { ctx, record } = await boot({ providers: [{ id: 'st-0001', type: 's3', options: { bucket: 'b' } }] })
   try {
-    const response = await call(record.routes[0].handler, { method: 'POST', url: '/__fs/providers/0/test' })
+    const response = await callApi(record, { method: 'POST', path: '/api/filestore/providers/test', body: { id: 'st-0001' } })
     assert.equal(response.status, 200)
     assert.equal(response.body.status.state, 'unauthorized')
     assert.match(response.body.status.message, /credential/i)
@@ -212,7 +242,7 @@ test('a resolved credential object reaches the driver as its value', async () =>
     resolveValue: { value: JSON.stringify({ accessKeyId: 'a', secretAccessKey: 'b' }), source: 'file' },
   })
   try {
-    const response = await call(record.routes[0].handler, { method: 'POST', url: '/__fs/providers/0/test' })
+    const response = await callApi(record, { method: 'POST', path: '/api/filestore/providers/test', body: { id: 'st-0001' } })
     // The endpoint is unreachable, so anything except "credential missing" means
     // the secret really arrived.
     assert.doesNotMatch(response.body.status.message, /no credentials/i)
@@ -232,9 +262,9 @@ test('storage_read puts the file content into the render', () => {
 test('a rejected settings update answers 500 instead of killing the process', async () => {
   const { ctx, record } = await boot({ providers: [{ id: 'st-0001', type: 'local', options: { root: '/tmp' } }], failWrites: true })
   try {
-    const response = await call(record.routes[0].handler, {
+    const response = await callApi(record, {
       method: 'POST',
-      url: '/__fs/providers',
+      path: '/api/filestore/providers/save',
       body: { type: 'local', options: { root: '/tmp' } },
     })
     assert.equal(response.status, 400)
@@ -253,21 +283,13 @@ test('an id is never reused after a deletion', () => {
   assert.equal(nextEntryId([]), 'st-0001')
 })
 
-test('the admin API refuses a request the host does not recognise', async () => {
+test('the admin routes are registered on the host channel, not as an open prefix', async () => {
   const { ctx, record } = await boot({ providers: [] })
   try {
-    // Stand in for `ctx.connection.requestRejection`: a request with no signed
-    // session must not reach the handler at all.
-    const guarded = createFilestoreHandler(
-      { describe: () => [{ ns: SETTINGS_NAMESPACE, value: { providers: [] } }], update: async () => {} },
-      { entries: () => [], status: () => ({}), test: async () => ({}) },
-      () => null,
-      undefined,
-      () => 401,
-    )
-    const response = await call(guarded, { url: '/__fs/providers' })
-    assert.equal(response.status, 401)
-    assert.equal(response.body.code, 'FILESTORE_UNAUTHORIZED')
+    // The old /__fs prefix is gone: nothing is mounted on the web server at all,
+    // so an unauthenticated client has no path to these operations.
+    const mountedPrefixes = record.routes.filter(route => !String(route.path).startsWith('/api/'))
+    assert.deepEqual(mountedPrefixes, [])
   } finally {
     await ctx.stop?.()
   }

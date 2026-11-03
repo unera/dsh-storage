@@ -177,7 +177,7 @@ var DICTIONARIES = {
 
 // client/index.jsx
 var SECTION_ID = "storage";
-var API = "/__fs";
+var API = "/api/filestore";
 var TYPE_LABELS = {
   local: "\u041A\u0430\u0442\u0430\u043B\u043E\u0433 \u043D\u0430 \u044D\u0442\u043E\u043C \u0445\u043E\u0441\u0442\u0435",
   s3: "S3-\u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439",
@@ -244,6 +244,7 @@ var styles = {
 };
 async function request(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
+    credentials: "same-origin",
     headers: { "content-type": "application/json" },
     ...options,
     body: options.body === void 0 ? void 0 : JSON.stringify(options.body)
@@ -410,7 +411,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
       return;
     }
     try {
-      const started = await request("/auth/device/start", {
+      const started = await request("/device/start", {
         method: "POST",
         // The secret goes with the handshake: an unsaved entry has nowhere to keep
         // it otherwise, and Yandex answers "Wrong client secret".
@@ -425,7 +426,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
           return;
         }
         try {
-          const answer = await request("/auth/device/poll", { method: "POST", body: { state: started.state } });
+          const answer = await request("/device/poll", { method: "POST", body: { state: started.state } });
           if (answer.status === "ok") {
             setDevice((current) => current === null ? null : { ...current, status: "ok" });
             setToken("");
@@ -460,8 +461,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
         ...secretFor() === void 0 ? {} : { secret: secretFor() },
         ...clientSecret.trim() === "" ? {} : { clientSecret: clientSecret.trim() }
       };
-      if (editing) await request(`/providers/${initial.index}`, { method: "PATCH", body: payload });
-      else await request("/providers", { method: "POST", body: { ...payload, type, id: entryId } });
+      await request("/providers/save", { method: "POST", body: { ...payload, type, id: entryId } });
       await onSaved();
     } catch (problem) {
       setError(problem.message);
@@ -668,7 +668,6 @@ function StoragePage(props) {
       setBusy(false);
     }
   };
-  const indexOf = (id) => providers.findIndex((provider) => provider.id === id);
   const form = adding ? { key: "new" } : editingId === null ? null : (() => {
     const provider = providers.find((item) => item.id === editingId);
     return provider === void 0 ? null : { key: provider.id, initial: { ...provider, index: providers.indexOf(provider) } };
@@ -718,14 +717,14 @@ function StoragePage(props) {
           setCheckingId(id);
           return act(
             async () => {
-              await request(`/providers/${indexOf(id)}/test`, { method: "POST" });
+              await request("/providers/test", { method: "POST", body: { id } });
             },
             { until: (next) => (next.find((item) => item.id === id)?.status?.checkedAt ?? null) !== before }
           ).finally(() => setCheckingId(null));
         },
         onPrimary: (id) => act(
           async () => {
-            await request(`/providers/${indexOf(id)}/primary`, { method: "POST" });
+            await request("/providers/primary", { method: "POST", body: { id } });
           },
           {
             // Show the switch immediately; the loop only waits for confirmation.
@@ -741,7 +740,7 @@ function StoragePage(props) {
           if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(t("confirmRemove"))) return;
           return act(
             async () => {
-              await request(`/providers/${indexOf(id)}`, { method: "DELETE" });
+              await request("/providers/delete", { method: "POST", body: { id } });
             },
             {
               optimistic: (previous) => previous.filter((item) => item.id !== id),

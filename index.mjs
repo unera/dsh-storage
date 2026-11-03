@@ -1069,6 +1069,209 @@ export function sweepOauthStates(now = Date.now()) {
   for (const [state, record] of oauthStates) if (now - record.startedAt > OAUTH_STATE_TTL_MS) oauthStates.delete(state)
 }
 
+/**
+ * JSON operations behind the settings panel.
+ *
+ * They are plain functions on purpose: the HTTP transport is the host's business,
+ * and every one of them can be exercised without a server.
+ *
+ * @param settings - settings service owning the namespace.
+ * @param filestore - the storage service.
+ * @param credentialsOf - getter for the credentials service, which may mount late.
+ * @param ctx - for the device log.
+ */
+export function createFilestoreApi(settings, filestore, credentialsOf = () => null, ctx = undefined) {
+  const read = () => {
+    const descriptor = settings.describe().find(entry => String(entry.ns) === SETTINGS_NAMESPACE)
+    const value = descriptor?.value
+    return Array.isArray(value?.providers) ? value.providers.map(entry => ({ ...entry })) : []
+  }
+  const write = providers => settings.update(SETTINGS_NAMESPACE, { providers })
+  const store = () => credentialsOf()
+  const saveSecret = async (ref, value) => {
+    const target = store()
+    if (typeof value !== 'string' || value === '') return
+    if (typeof target?.set === 'function') await target.set(ref, value)
+  }
+
+  const list = async () => {
+    const { entries } = normalizeEntries(read())
+    const target = store()
+    const providers = []
+    for (const entry of entries) {
+      let secretConfigured = false
+      let clientSecretConfigured = false
+      if (typeof target?.describe === 'function') {
+        secretConfigured = (await target.describe(entry.credentialRef).catch(() => undefined))?.configured === true
+        clientSecretConfigured = (await target.describe(makeCredentialRef(`${entry.id}-client`)).catch(() => undefined))?.configured === true
+      }
+      providers.push({ ...entry, secretConfigured, clientSecretConfigured, status: filestore.status(entry.id) })
+    }
+    return { status: 200, body: { providers, types: PROVIDER_TYPES, capabilities: CAPABILITIES } }
+  }
+
+  /** Create when the body carries no id, update when it does. */
+  const save = async body => {
+    const providers = read()
+    const existing = typeof body?.id === 'string' ? providers.findIndex(entry => entry?.id === body.id) : -1
+    const base = existing >= 0 ? normalizeEntry(providers[existing], existing) : undefined
+    const candidate = normalizeEntry({
+      ...(base ?? {}),
+      ...body,
+      id: base?.id ?? (typeof body?.id === 'string' && /^st-[a-z0-9]{4,16}$/i.test(body.id) && !providers.some(entry => entry?.id === body.id) ? body.id : nextEntryId(providers)),
+    }, existing >= 0 ? existing : providers.length)
+    if (candidate === undefined) return { status: 400, body: { error: `unknown storage type ${JSON.stringify(body?.type)}`, code: 'FILESTORE_UNSUPPORTED' } }
+    await saveSecret(candidate.credentialRef, body?.secret)
+    await saveSecret(makeCredentialRef(`${candidate.id}-client`), body?.clientSecret)
+    const next = existing >= 0 ? providers.map((entry, index) => (index === existing ? { ...candidate } : entry)) : [...providers, { ...candidate }]
+    if (body?.role === 'primary') for (const entry of next) if (entry.id !== candidate.id) entry.role = 'secondary'
+    await write(next)
+    return { status: existing >= 0 ? 200 : 201, body: { provider: candidate } }
+  }
+
+  const remove = async body => {
+    const providers = read()
+    const index = providers.findIndex(entry => entry?.id === body?.id)
+    if (index < 0) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
+    const current = normalizeEntry(providers[index], index)
+    if (current?.role === 'primary' && providers.length > 1) {
+      return { status: 409, body: { error: 'назначьте другое хранилище основным перед удалением', code: 'FILESTORE_PRIMARY_IN_USE' } }
+    }
+    await write(providers.filter((_, position) => position !== index))
+    return { status: 200, body: { deleted: true } }
+  }
+
+  const test = async body => {
+    const entry = filestore.entries().find(item => item.id === body?.id)
+    if (entry === undefined) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
+    return { status: 200, body: { status: await filestore.test(entry.id) } }
+  }
+
+  const primary = async body => {
+    const providers = read()
+    const index = providers.findIndex(entry => entry?.id === body?.id)
+    if (index < 0) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
+    await write(providers.map((entry, position) => ({ ...entry, role: position === index ? 'primary' : 'secondary' })))
+    return { status: 200, body: { primary: body.id } }
+  }
+
+  /**
+   * Device handshake: ask the provider for a user code and start polling on the
+   * host, so the flow survives a page reload and a restart.
+   */
+  const deviceStart = async body => {
+    const entryId = typeof body?.id === 'string' ? body.id.trim() : ''
+    const clientId = typeof body?.clientId === 'string' ? body.clientId.trim() : ''
+    const clientSecret = typeof body?.clientSecret === 'string' ? body.clientSecret.trim() : ''
+    const type = typeof body?.type === 'string' ? body.type : 'yadisk'
+    const descriptor = OAUTH_PROVIDERS[type]
+    if (!/^st-[a-z0-9]{4,16}$/i.test(entryId)) return { status: 400, body: { error: 'нужен идентификатор записи', code: 'FILESTORE_BAD_REQUEST' } }
+    if (descriptor?.deviceCodeUrl === undefined) return { status: 400, body: { error: `тип ${type} не умеет вход по коду`, code: 'FILESTORE_NO_DEVICE_FLOW' } }
+    if (clientId === '') return { status: 400, body: { error: 'нужен client_id приложения', code: 'FILESTORE_NO_CLIENT_ID' } }
+    if (clientSecret !== '') await saveSecret(makeCredentialRef(`${entryId}-client`), clientSecret)
+    const form = new URLSearchParams({ client_id: clientId })
+    if (typeof descriptor.scope === 'string') form.set('scope', descriptor.scope)
+    const answer = await oauthTransport.fetch(descriptor.deviceCodeUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: form,
+    })
+    const answerBody = await answer.json().catch(() => ({}))
+    if (!answer.ok || typeof answerBody.device_code !== 'string') {
+      return { status: 400, body: { error: answerBody?.error_description ?? 'провайдер не выдал код устройства', code: 'FILESTORE_DEVICE_FLOW_FAILED' } }
+    }
+    const interval = Number(answerBody.interval ?? 5)
+    const expiresIn = Number(answerBody.expires_in ?? 300)
+    const record = {
+      entryId,
+      credentialRef: makeCredentialRef(entryId),
+      clientId,
+      tokenUrl: descriptor.tokenUrl,
+      deviceCode: answerBody.device_code,
+      intervalMs: Math.max(1000, interval * 1000),
+      expiresAt: Date.now() + Math.max(30, expiresIn) * 1000,
+      status: 'pending',
+      done: false,
+    }
+    const state = encodeDeviceState(record)
+    record.state = state
+    deviceStates.set(state, record)
+    const file = pendingHandshakesPath()
+    await savePendingHandshakes(file, [...deviceStates.values()].filter(item => item.done !== true))
+    deviceLog(ctx, `device/start entry=${entryId} userCode=${answerBody.user_code} interval=${interval}s`)
+    startDevicePoller(record, store(), ctx, async finished => {
+      const remaining = [...deviceStates.values()].filter(item => item !== finished && item.done !== true)
+      await savePendingHandshakes(file, remaining)
+    })
+    return {
+      status: 200,
+      body: { state, userCode: answerBody.user_code, verificationUrl: answerBody.verification_url ?? descriptor.verificationUrl, interval, expiresIn },
+    }
+  }
+
+  /** Report, and if needed finish, the handshake. */
+  const devicePoll = async body => {
+    const state = String(body?.state ?? '')
+    const record = deviceStates.get(state)
+    if (record === undefined) {
+      const decoded = decodeDeviceState(state)
+      if (decoded === undefined) return { status: 200, body: { status: 'expired' } }
+      if (Date.now() > decoded.expiresAt) return { status: 200, body: { status: 'expired' } }
+      let outcome
+      try {
+        outcome = await exchangeDeviceCode(decoded, store())
+      } catch (error) {
+        outcome = { status: 'error', error: String(error?.message ?? error) }
+      }
+      return { status: 200, body: { status: outcome.status, ...(outcome.error === undefined ? {} : { error: outcome.error }) } }
+    }
+    if (record.done === true && record.status === 'ok') deviceStates.delete(state)
+    return { status: 200, body: { status: record.done === true ? record.status : 'pending', ...(record.error === undefined ? {} : { error: record.error }) } }
+  }
+
+  return { list, save, remove, test, primary, deviceStart, devicePoll }
+}
+
+/**
+ * Exact routes under `/api`, which the host admits only for an authenticated owner
+ * — the same gate `/api/settings` sits behind.
+ *
+ * @param connection - `ctx.connection`.
+ * @param api - operations from {@link createFilestoreApi}.
+ * @returns the disposers of every registered route.
+ */
+export function registerFilestoreRoutes(connection, api) {
+  if (typeof connection?.fetch?.register !== 'function') return []
+  const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
+  const readJson = async request => {
+    const text = await request.text().catch(() => '')
+    return text.trim() === '' ? {} : JSON.parse(text)
+  }
+  const route = (path, methods, run) => connection.fetch.register({
+    path,
+    methods,
+    requestBody: 'buffered',
+    fetch: async request => {
+      try {
+        const body = methods.includes('POST') && request.method === 'POST' ? await readJson(request) : {}
+        const result = await run(body)
+        return json(result.status, result.body)
+      } catch (error) {
+        return json(400, { error: String(error?.message ?? error), code: error?.code ?? 'FILESTORE_ERROR' })
+      }
+    },
+  })
+  return [
+    route('/api/filestore/providers', ['GET'], () => api.list()),
+    route('/api/filestore/providers/save', ['POST'], body => api.save(body)),
+    route('/api/filestore/providers/delete', ['POST'], body => api.remove(body)),
+    route('/api/filestore/providers/test', ['POST'], body => api.test(body)),
+    route('/api/filestore/providers/primary', ['POST'], body => api.primary(body)),
+    route('/api/filestore/device/start', ['POST'], body => api.deviceStart(body)),
+    route('/api/filestore/device/poll', ['POST'], body => api.devicePoll(body)),
+  ]
+}
+
 /** JSON reply helper for the admin API. */
 function json(response, status, body) {
   const text = JSON.stringify(body)
@@ -1557,18 +1760,16 @@ export function apply(ctx, config = {}) {
     })
   })
 
-  ctx.inject(['settings', 'webServer', 'connection'], child => {
+  // The admin API rides the host's own /api channel, which admits only an
+  // authenticated owner. A bare prefix registered on the web server would answer
+  // the whole internet, and that is not a decision a storage plugin gets to make.
+  ctx.inject(['settings', 'connection'], child => {
     const settings = child.settings
-    const server = child.webServer
-    const connection = child.connection
-    if (typeof settings?.update !== 'function' || typeof server?.register !== 'function') return undefined
-    const guard = typeof connection?.requestRejection === 'function'
-      ? request => connection.requestRejection(request)
-      : undefined
-    const handler = createFilestoreHandler(settings, filestore, () => shared.credentials, child, guard)
+    if (typeof settings?.update !== 'function') return undefined
+    const api = createFilestoreApi(settings, filestore, () => shared.credentials, child)
     return child.effect(() => {
-      const unregister = server.register({ kind: 'prefix', path: ROUTE_PREFIX, handler })
-      return () => { try { unregister?.() } catch { /* already gone */ } }
+      const disposers = registerFilestoreRoutes(child.connection, api)
+      return () => { for (const dispose of disposers) { try { dispose?.() } catch { /* already gone */ } } }
     })
   })
 }
