@@ -478,7 +478,10 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
       return;
     }
     try {
-      const started = await request(`/providers/${entryId}/auth/start`, { method: "POST" });
+      const response = await fetch(`/__fs/providers/${entryId}/auth/start`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" } });
+      const text = await response.text();
+      const started = text === "" ? {} : JSON.parse(text);
+      if (!response.ok) throw new Error(started?.error ?? `HTTP ${response.status}`);
       window.open(started.url, "_blank", "noopener,noreferrer");
     } catch (problem) {
       setError(problem.message);

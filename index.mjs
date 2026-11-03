@@ -1325,6 +1325,9 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
   // and an unhandled rejection ends the process.
   const write = providers => settings.update(SETTINGS_NAMESPACE, { providers })
   const indexOf = (providers, raw) => {
+    const text = String(raw)
+    const byId = providers.findIndex(entry => entry?.id === text)
+    if (byId >= 0) return byId
     const index = Number(raw)
     if (!Number.isInteger(index) || index < 0 || index >= providers.length) {
       throw new FilestoreError('FILESTORE_BAD_REQUEST', `entry ${JSON.stringify(raw)} is out of range`)
