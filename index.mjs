@@ -31,7 +31,6 @@ import { createHash } from 'node:crypto'
 import { createS3Driver } from './s3.mjs'
 import { createWebdavDriver } from './webdav.mjs'
 import { createYandexDriver } from './yadisk.mjs'
-import { createGoogleDriver } from './gdrive.mjs'
 
 /** Stable Loader identity. */
 export const name = 'dsh-storage'
@@ -57,7 +56,7 @@ export const MAX_READ_BYTES = 256 * 1024
 export const KEEP_FILE = '.dsh-storage-keep'
 
 /** Driver types this build can actually run. */
-export const PROVIDER_TYPES = Object.freeze(['local', 's3', 'webdav', 'yadisk', 'gdrive'])
+export const PROVIDER_TYPES = Object.freeze(['local', 's3', 'webdav', 'yadisk'])
 
 /**
  * What each type can do. The UI asks before drawing a button, and the host
@@ -74,9 +73,6 @@ export const CAPABILITIES = Object.freeze({
     put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
   }),
   yadisk: Object.freeze({
-    put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
-  }),
-  gdrive: Object.freeze({
     put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
   }),
 })
@@ -440,7 +436,6 @@ export const DRIVERS = Object.freeze({
   s3: createS3Driver,
   webdav: createWebdavDriver,
   yadisk: createYandexDriver,
-  gdrive: createGoogleDriver,
 })
 
 /** Map a Node fs error onto the storage vocabulary. */
@@ -509,15 +504,14 @@ export class Filestore extends Service {
     if (factory === undefined) throw new FilestoreError('FILESTORE_UNSUPPORTED', `storage type ${entry.type} is not available`)
     // A secret is resolved per call, never captured: the credentials service may
     // mount after the driver is built, and a captured null never recovers.
-    const resolveSecret = async () => {
+    const resolveCredential = async name => {
       const store = this.secretSource()
       if (store === null || typeof store.resolve !== 'function') return undefined
-      const resolved = await store.resolve(entry.credentialRef)
+      const resolved = await store.resolve(name)
       if (resolved === undefined || resolved === null) return undefined
-      // `credentials.resolve` answers `{ value, source }`, not a bare string; a
-      // driver handed the object reports "no credentials" forever.
       return typeof resolved === 'string' ? resolved : resolved.value
     }
+    const resolveSecret = () => resolveCredential(entry.credentialRef)
     return factory(entry, { resolveSecret })
   }
 

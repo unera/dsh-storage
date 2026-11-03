@@ -141,7 +141,7 @@ test('the admin API lists, adds, checks and promotes a storage', async () => {
       assert.equal(listed.status, 200)
       assert.equal(listed.body.providers.length, 1)
       assert.equal(listed.body.providers[0].secretConfigured, false)
-      assert.deepEqual(listed.body.types, ['local', 's3', 'webdav', 'yadisk', 'gdrive'])
+      assert.deepEqual(listed.body.types, ['local', 's3', 'webdav', 'yadisk'])
 
       const created = await callApi(record, {
         method: 'POST',
