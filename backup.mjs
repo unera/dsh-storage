@@ -195,6 +195,18 @@ export function normalizeBackupEntry(raw, index, providerIds = []) {
     sections,
     credentialRef: credentialRefValue,
     schedule: typeof raw.schedule === 'string' ? raw.schedule.trim() : '',
+    lastRun: normalizeLastRun(raw.lastRun),
+  }
+}
+
+/** Normalize a persisted last-run record; `null` when there was no attempt. */
+export function normalizeLastRun(raw) {
+  if (raw === null || raw === undefined || typeof raw !== 'object') return null
+  return {
+    startedAt: typeof raw.startedAt === 'string' ? raw.startedAt : undefined,
+    finishedAt: typeof raw.finishedAt === 'string' ? raw.finishedAt : undefined,
+    code: typeof raw.code === 'string' ? raw.code : undefined,
+    message: typeof raw.message === 'string' ? raw.message : undefined,
   }
 }
 
@@ -834,5 +846,75 @@ export async function runBackup(ctx, entry, filestore, resolveSecret, options = 
   } finally {
     await removeWorkspace(workspace)
     await removeWorkspace(stage)
+  }
+}
+
+/**
+ * In-memory run registry: one active run per backup id within this process.
+ * The single-threaded event loop makes the synchronous `acquireRun` check atomic
+ * enough for the required same-process race protection.
+ */
+const activeRuns = new Map()
+
+/** Claim a run for `id`; throws `BACKUP_ALREADY_RUNNING` when it is busy. */
+export function acquireRun(id, meta = {}) {
+  if (activeRuns.has(id)) {
+    throw new BackupError('BACKUP_ALREADY_RUNNING', `backup ${id} is already running`)
+  }
+  const run = { id, startedAt: new Date().toISOString(), phase: 'running', pids: [], ...meta }
+  activeRuns.set(id, run)
+  return run
+}
+
+/** Release a run's lock; a no-op when it was not held. */
+export function releaseRun(id) {
+  activeRuns.delete(id)
+}
+
+/** The live run record for `id`, or `undefined`. */
+export function getRun(id) {
+  return activeRuns.get(id)
+}
+
+/** Readable run state for list surfaces: running + startedAt + phase. */
+export function runStateOf(id) {
+  const run = activeRuns.get(id)
+  return run === undefined
+    ? { running: false, startedAt: null, phase: null }
+    : { running: true, startedAt: run.startedAt, phase: run.phase }
+}
+
+/**
+ * Run one backup under the per-id lock. A concurrent run of the same id returns
+ * `{ code: 'BACKUP_ALREADY_RUNNING', ... }` instead of starting. The lock is
+ * released in `finally` on success, structured error and thrown error alike.
+ *
+ * `options.persistLastRun(lastRun)` is called at start (startedAt +
+ * `code: 'running'`) and again once the attempt settles (finishedAt + code +
+ * message), so a restart or a later fetch can read the last attempt.
+ */
+export async function runBackupLocked(ctx, entry, filestore, resolveSecret, options = {}) {
+  let run
+  try {
+    run = acquireRun(entry.id)
+  } catch (error) {
+    if (error instanceof BackupError && error.code === 'BACKUP_ALREADY_RUNNING') {
+      return { code: 'BACKUP_ALREADY_RUNNING', message: error.message, details: { sections: [], killed: [] } }
+    }
+    throw error
+  }
+  const startedAt = run.startedAt
+  const persistLastRun = typeof options.persistLastRun === 'function' ? options.persistLastRun : async () => {}
+  await Promise.resolve(persistLastRun({ startedAt, code: 'running' })).catch(() => {})
+  try {
+    const result = await runBackup(ctx, entry, filestore, resolveSecret, options)
+    await Promise.resolve(persistLastRun({ startedAt, finishedAt: new Date().toISOString(), code: result.code, message: result.message })).catch(() => {})
+    return result
+  } catch (error) {
+    const mapped = error instanceof BackupError ? error : new BackupError('BACKUP_FAILED', String(error?.message ?? error))
+    await Promise.resolve(persistLastRun({ startedAt, finishedAt: new Date().toISOString(), code: mapped.code, message: mapped.message })).catch(() => {})
+    throw error
+  } finally {
+    releaseRun(entry.id)
   }
 }

@@ -4,16 +4,16 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools, nextEntryId, createFilestoreHandler, cronMatches } from '../index.mjs'
+import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools, nextEntryId, createFilestoreHandler, cronMatches, acquireRun, releaseRun } from '../index.mjs'
 
 /**
  * Boot the plugin for real: a genuine cordis Context with the services it injects
  * stubbed out. `ctx.start()` is what makes `inject` callbacks run, so this checks
  * the actual wiring rather than a hand-rolled imitation of it.
  */
-async function boot({ providers = [], resolveValue = undefined, failWrites = false } = {}) {
+async function boot({ providers = [], backups = [], resolveValue = undefined, failWrites = false } = {}) {
   const ctx = new Context()
-  const record = { tools: [], sections: [], routes: [], configured: [], document: { providers }, secrets: [] }
+  const record = { tools: [], sections: [], routes: [], configured: [], document: { providers, backups }, secrets: [] }
   ctx.provide('tools', { register: tool => record.tools.push(tool) })
   ctx.provide('systemPrompt', {
     section: section => { record.sections.push(section); return () => {} },
@@ -92,11 +92,12 @@ function call(handler, { method = 'GET', url, body }) {
   })
 }
 
-test('seven tools register, plus admin routes', async () => {
+test('nine tools register, plus admin routes', async () => {
   const { ctx, record } = await boot()
   try {
-    assert.equal(record.tools.length, 7)
+    assert.equal(record.tools.length, 9)
     assert.deepEqual(record.tools.map(tool => tool.name).sort(), [
+      'backup_list', 'backup_run',
       'storage_delete', 'storage_df', 'storage_list', 'storage_ls', 'storage_mkdir', 'storage_read', 'storage_write',
     ])
     assert.deepEqual(record.configured, [{ auto: true }])
@@ -346,4 +347,149 @@ test('cronMatches understands star, step, list and range fields', () => {
   assert.equal(cronMatches('0 9 * * 1-5', at(0, 9, 8, 11, 6)), false)
   assert.equal(cronMatches('0 9,18 * * *', at(0, 18, 6, 11, 3)), true)
   assert.equal(cronMatches('0 9,18 * * *', at(0, 12, 6, 11, 3)), false)
+})
+
+test('backup_list returns configured backups without secrets', async () => {
+  const { ctx, record } = await boot({
+    providers: [{ id: 'st-0001', type: 'local', options: { root: '/tmp' } }],
+    backups: [{ id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk', rotation: 3, timeoutSeconds: 120, sections: ['db'], include: ['db'], ignore: ['logs'], schedule: '0 3 * * *' }],
+  })
+  try {
+    const tool = record.tools.find(item => item.name === 'backup_list')
+    assert.equal(typeof tool.output.render, 'function', 'backup_list needs a render')
+    const result = await tool.execute({})
+    assert.equal(result.backups.length, 1)
+    const item = result.backups[0]
+    assert.equal(item.id, 'bk-0001')
+    assert.equal(item.name, 'daily')
+    assert.equal(item.providerId, 'st-0001')
+    assert.equal(item.directory, 'bk')
+    assert.equal(item.rotation, 3)
+    assert.equal(item.timeoutSeconds, 120)
+    assert.deepEqual(item.sections, ['db'])
+    assert.deepEqual(item.include, ['db'])
+    assert.deepEqual(item.ignore, ['logs'])
+    assert.equal(item.schedule, '0 3 * * *')
+    assert.equal(item.keyConfigured, false)
+    assert.equal(item.credentialRef, undefined, 'credential reference is not exposed')
+    assert.equal(item.secret, undefined)
+  } finally {
+    await ctx.stop?.()
+  }
+})
+
+test('backup_run runs by id and awaits the full structured result', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'dsh-storage-tool-run-'))
+  try {
+    const { ctx, record } = await boot({
+      providers: [{ id: 'st-0001', type: 'local', role: 'primary', options: { root } }],
+      // ignore the always-on 30s 'test' participant so this stays fast; the
+      // self-backup section still runs for real.
+      backups: [{ id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk', rotation: 2, timeoutSeconds: 5, ignore: ['test'], include: [] }],
+    })
+    try {
+      const tool = record.tools.find(item => item.name === 'backup_run')
+      assert.equal(typeof tool.output.render, 'function', 'backup_run needs a render')
+      const result = await tool.execute({ id: 'bk-0001' })
+      assert.equal(result.code, 'ok')
+      assert.equal(typeof result.message, 'string')
+      assert.ok(result.details && Array.isArray(result.details.sections))
+      assert.match(result.archive.name, /^daily_.*\.tar$/)
+      // The render produces a readable text block.
+      const blocks = tool.output.render({ id: 'bk-0001' }, result)
+      assert.equal(blocks[0].type, 'text')
+      assert.match(blocks[0].text, /Бэкап выполнен/)
+    } finally {
+      await ctx.stop?.()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('backup_run answers not-found for an unknown id', async () => {
+  const { ctx, record } = await boot({ backups: [{ id: 'bk-0001', name: 'daily', providerId: 'st-0001' }] })
+  try {
+    const tool = record.tools.find(item => item.name === 'backup_run')
+    await assert.rejects(tool.execute({ id: 'bk-9999' }), /no backup with id/)
+  } finally {
+    await ctx.stop?.()
+  }
+})
+
+test('save and delete are guarded while a backup is running', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'dsh-storage-guard-'))
+  try {
+    const { ctx, record } = await boot({
+      providers: [{ id: 'st-0001', type: 'local', role: 'primary', options: { root } }],
+      backups: [{ id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk' }],
+    })
+    try {
+      acquireRun('bk-0001')
+      const save = await callApi(record, { method: 'POST', path: '/api/filestore/backups/save', body: { id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk' } })
+      assert.equal(save.status, 409)
+      assert.equal(save.body.code, 'BACKUP_ALREADY_RUNNING')
+      const del = await callApi(record, { method: 'POST', path: '/api/filestore/backups/delete', body: { id: 'bk-0001' } })
+      assert.equal(del.status, 409)
+      assert.equal(del.body.code, 'BACKUP_ALREADY_RUNNING')
+      releaseRun('bk-0001')
+      const del2 = await callApi(record, { method: 'POST', path: '/api/filestore/backups/delete', body: { id: 'bk-0001' } })
+      assert.equal(del2.status, 200)
+    } finally {
+      releaseRun('bk-0001')
+      await ctx.stop?.()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('list and backup_list report an active run', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'dsh-storage-active-'))
+  try {
+    const { ctx, record } = await boot({
+      providers: [{ id: 'st-0001', type: 'local', role: 'primary', options: { root } }],
+      backups: [{ id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk' }],
+    })
+    try {
+      acquireRun('bk-0001')
+      const listed = await callApi(record, { path: '/api/filestore/backups' })
+      assert.equal(listed.body.backups[0].running, true)
+      assert.ok(listed.body.backups[0].startedAt)
+      const tool = record.tools.find(item => item.name === 'backup_list')
+      const result = await tool.execute({})
+      assert.equal(result.backups[0].running, true)
+      assert.ok(result.backups[0].startedAt)
+    } finally {
+      releaseRun('bk-0001')
+      await ctx.stop?.()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a run persists lastRun into the settings document', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'dsh-storage-lastrun-'))
+  try {
+    const { ctx, record } = await boot({
+      providers: [{ id: 'st-0001', type: 'local', role: 'primary', options: { root } }],
+      // ignore the 30s 'test' participant so the self-backup section still runs fast.
+      backups: [{ id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk', ignore: ['test'] }],
+    })
+    try {
+      const run = await callApi(record, { method: 'POST', path: '/api/filestore/backups/run', body: { id: 'bk-0001' } })
+      assert.equal(run.status, 200)
+      assert.equal(run.body.code, 'ok')
+      const stored = record.document.backups.find(item => item.id === 'bk-0001')
+      assert.equal(stored.lastRun.code, 'ok')
+      assert.ok(stored.lastRun.startedAt)
+      assert.ok(stored.lastRun.finishedAt)
+      assert.equal(typeof stored.lastRun.message, 'string')
+    } finally {
+      await ctx.stop?.()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })

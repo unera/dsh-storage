@@ -89,7 +89,7 @@ async function request(path, options = {}) {
   })
   const text = await response.text()
   const body = text === '' ? {} : JSON.parse(text)
-  if (!response.ok) throw new Error(body?.error ?? `HTTP ${response.status}`)
+  if (!response.ok) throw new Error(body?.error ?? body?.message ?? `HTTP ${response.status}`)
   return body
 }
 
@@ -674,6 +674,10 @@ const BACKUP_SECTION_ID = 'backup'
 /** One backup row. */
 function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, running }) {
   const provider = providers.find(item => item.id === backup.providerId)
+  const isRunning = running || backup.running === true
+  const lastRun = backup.lastRun
+  const lastTone = lastRun == null ? null : lastRun.code === 'ok' ? styles.pillOk : styles.pillBad
+  const lastHint = lastRun == null ? '' : `${lastRun.code}${lastRun.message ? `: ${lastRun.message}` : ''}${lastRun.finishedAt ? ` @ ${lastRun.finishedAt}` : ''}`
   return jsx('tr', {
     children: [
       jsx('td', { style: styles.td, children: [
@@ -685,13 +689,14 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
         jsx(Pill, { tone: styles.pillGrey, hint: t('backup.rotationHint'), children: `↻ ${backup.rotation}` }),
         backup.keyConfigured ? jsx(Pill, { tone: styles.pillOk, hint: t('backup.keySet'), children: '🔑' }) : null,
         backup.schedule === '' ? null : jsx(Pill, { tone: styles.pillFree, hint: t('backup.schedule'), children: backup.schedule }),
+        lastRun == null ? null : jsx(Pill, { tone: lastTone, hint: lastHint, children: lastRun.code === 'ok' ? t('backup.okShort') : t('backup.errShort') }),
       ] }) }),
       jsx('td', { style: { ...styles.td, whiteSpace: 'nowrap', verticalAlign: 'top' }, children: jsx('div', { style: styles.buttonColumn, children: [
-        running
+        isRunning
           ? jsx(Pill, { tone: styles.pillGrey, hint: t('backup.running'), children: jsx('span', { style: styles.spinner }) })
           : jsx(IconButton, { icon: 'test', title: t('backup.run'), disabled: busy, onClick: () => onRun(backup.id) }),
-        jsx(IconButton, { icon: 'edit', title: t('backup.edit'), disabled: busy, onClick: () => onEdit(backup.id) }),
-        jsx(IconButton, { icon: 'remove', title: t('backup.remove'), disabled: busy, onClick: () => onRemove(backup.id) }),
+        jsx(IconButton, { icon: 'edit', title: t('backup.edit'), disabled: busy || isRunning, onClick: () => onEdit(backup.id) }),
+        jsx(IconButton, { icon: 'remove', title: t('backup.remove'), disabled: busy || isRunning, onClick: () => onRemove(backup.id) }),
       ] }) }),
     ],
   })
@@ -826,7 +831,7 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
     ] }),
     error === null ? null : jsx('div', { style: styles.error, children: error }),
     jsx('div', { style: { marginTop: 12, display: 'flex', gap: 8 }, children: [
-      jsx('button', { style: styles.button, disabled: busy, onClick: submit, children: [
+      jsx('button', { style: styles.button, disabled: busy || (editing && initial.running === true), onClick: submit, children: [
         jsx('img', { src: ICONS.save, alt: '', style: { ...styles.icon, display: 'inline-block', verticalAlign: '-3px', marginRight: 6 } }),
         t('save'),
       ] }),
@@ -872,6 +877,15 @@ export function BackupPage(props) {
 
   useEffect(() => { load() }, [])
 
+  // While any backup is running, refresh the list so the spinner and last-run
+  // state come from the backend, not only from the local runningId.
+  const hasRunning = backups.some(item => item.running === true)
+  useEffect(() => {
+    if (!hasRunning) return undefined
+    const timer = setInterval(() => { fetchOnce().catch(() => {}) }, 2000)
+    return () => clearInterval(timer)
+  }, [hasRunning])
+
   const run = async id => {
     setRunningId(id)
     setResult(null)
@@ -884,6 +898,7 @@ export function BackupPage(props) {
     } finally {
       setBusy(false)
       setRunningId(null)
+      await load()
     }
   }
 

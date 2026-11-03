@@ -32,9 +32,10 @@ import { createS3Driver } from './s3.mjs'
 import { createWebdavDriver } from './webdav.mjs'
 import { createYandexDriver } from './yadisk.mjs'
 import {
-  BackupWorkspace, DEFAULT_ROTATION, DEFAULT_TIMEOUT_SECONDS, atomicWriteStatus, backupTimestamp, decodeBackupKey,
-  discoverSections, dispatchBackupStart, encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries,
-  normalizeBackupEntry, normalizePids, readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
+  BackupWorkspace, DEFAULT_ROTATION, DEFAULT_TIMEOUT_SECONDS, acquireRun, atomicWriteStatus, backupTimestamp, decodeBackupKey,
+  discoverSections, dispatchBackupStart, encodeBackupKey, getRun, listSections, makeBackupKeyRef, nextBackupId,
+  normalizeBackupEntries, normalizeBackupEntry, normalizePids, readSectionStatus, releaseRun, removeWorkspace, runBackup,
+  runBackupLocked, runStateOf, sanitizeBackupName, trimBackupKey,
 } from './backup.mjs'
 import {
   SELF_SECTION_NAME, collectCredentialRefs, credentialsDocument, finalizeSelfSection, prepareSelfSection,
@@ -49,9 +50,10 @@ export const name = 'dsh-storage'
 
 // Re-export the backup engine so participants and tests reach one surface.
 export {
-  BackupWorkspace, DEFAULT_ROTATION, DEFAULT_TIMEOUT_SECONDS, atomicWriteStatus, backupTimestamp, decodeBackupKey,
-  dispatchBackupStart, encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries,
-  normalizeBackupEntry, normalizePids, readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
+  BackupWorkspace, DEFAULT_ROTATION, DEFAULT_TIMEOUT_SECONDS, acquireRun, atomicWriteStatus, backupTimestamp,
+  decodeBackupKey, dispatchBackupStart, encodeBackupKey, getRun, listSections, makeBackupKeyRef, nextBackupId,
+  normalizeBackupEntries, normalizeBackupEntry, normalizePids, readSectionStatus, releaseRun, removeWorkspace, runBackup,
+  runBackupLocked, runStateOf, sanitizeBackupName, trimBackupKey,
 }
 
 // Re-export the self-backup participant surface.
@@ -656,6 +658,14 @@ export const PROMPT_TEXT = [
   'A storage marked primary is used when a call names no id. No tool takes or returns a secret.',
 ].join(' ')
 
+/** Backup tool prompt text; static by design, so the cache holds. */
+export const BACKUP_PROMPT_TEXT = [
+  'Backups are available through the backup tools.',
+  '`backup_list` shows the configured backups with their ids and settings; call it first to find the id to run.',
+  '`backup_run` runs one backup by id and waits for the full result: code, message, per-section details and the uploaded archive.',
+  'No tool takes or returns a secret.',
+].join(' ')
+
 /** Human-readable size, for tool text. */
 export function humanBytes(value) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '?'
@@ -939,6 +949,129 @@ export function createStorageTools(filestore) {
     }),
   ]
   return tools.map(tool => ({ ...tool, output: { ...tool.output, render: RENDERERS[tool.name] } }))
+}
+
+/** One line of text per backup tool result; the model reads only the render. */
+export const BACKUP_RENDERERS = {
+  backup_list: (_args, value) => {
+    if (value.backups.length === 0) return [{ type: 'text', text: 'Резервных копий нет.' }]
+    const lines = value.backups.map(item => {
+      const where = `${item.providerId}${item.directory === '' ? '' : `/${item.directory}`}`
+      return `- ${item.name} (${item.id}): ${where}, rotation ${item.rotation}, sections ${item.sections.length}, key ${item.keyConfigured ? 'set' : 'not set'}`
+    })
+    return [{ type: 'text', text: `Резервные копии:\n${lines.join('\n')}` }]
+  },
+  backup_run: (_args, value) => {
+    const sectionLine = Array.isArray(value.details?.sections) && value.details.sections.length > 0
+      ? `\nСекции: ${value.details.sections.map(item => `${item.name}:${item.outcome}`).join(' ')}`
+      : ''
+    const text = `${value.code === 'ok' ? 'Бэкап выполнен' : `Бэкап не выполнен (${value.code})`}: ${value.message}${sectionLine}`
+    return [{ type: 'text', text }]
+  },
+}
+
+/**
+ * Create the backup tools bound to the current settings/credentials/context.
+ * `backup_run` reuses the same {@link runBackup} as the admin API and cron, so
+ * the model gets the exact same structured result.
+ */
+export function createBackupTools({ ctx, filestore, readBackups, resolveBackupSecret, persistSections, persistLastRun, credentialsOf }) {
+  const listOutput = {
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        backups: {
+          type: 'array',
+          required: true,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              id: { type: 'string', required: true },
+              name: { type: 'string', required: true },
+              providerId: { type: 'string', required: true },
+              directory: { type: 'string', required: true },
+              rotation: { type: 'integer', required: true },
+              timeoutSeconds: { type: 'integer', required: true },
+              sections: { type: 'array', required: true, items: { type: 'string' } },
+              include: { type: 'array', required: true, items: { type: 'string' } },
+              ignore: { type: 'array', required: true, items: { type: 'string' } },
+              schedule: { type: 'string', required: true },
+              keyConfigured: { type: 'boolean', required: true },
+              running: { type: 'boolean', required: true },
+              startedAt: { type: 'string' },
+              lastRun: { type: 'object', additionalProperties: true },
+            },
+          },
+        },
+      },
+    },
+  }
+
+  const tools = [
+    defineTool({
+      name: 'backup_list',
+      description: 'List the configured backups with id, name, storage, directory, rotation, section timeout, discovered sections, include/ignore glob masks, schedule and whether the encryption key is set. No secrets are returned. Call this before backup_run so you know the id to run.',
+      parameters: {},
+      output: listOutput,
+      async execute() {
+        const store = typeof credentialsOf === 'function' ? credentialsOf() : null
+        const backups = []
+        for (const entry of readBackups()) {
+          let keyConfigured = false
+          if (store !== null && typeof store.describe === 'function') {
+            keyConfigured = (await store.describe(entry.credentialRef).catch(() => undefined))?.configured === true
+          }
+          const state = runStateOf(entry.id)
+          backups.push({
+            id: entry.id,
+            name: entry.name,
+            providerId: entry.providerId,
+            directory: entry.directory,
+            rotation: entry.rotation,
+            timeoutSeconds: entry.timeoutSeconds,
+            sections: entry.sections,
+            include: entry.include,
+            ignore: entry.ignore,
+            schedule: entry.schedule,
+            keyConfigured,
+            running: state.running,
+            ...(state.running ? { startedAt: state.startedAt } : {}),
+            ...(entry.lastRun ? { lastRun: entry.lastRun } : {}),
+          })
+        }
+        return { backups }
+      },
+    }),
+
+    defineTool({
+      name: 'backup_run',
+      description: 'Run one configured backup by id and wait for the full result: code, message, per-section details and the uploaded archive (name, sha256, size, encrypted).',
+      parameters: { id: { type: 'string', required: true, description: 'Backup id from backup_list.' } },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            code: { type: 'string', required: true },
+            message: { type: 'string', required: true },
+            details: { type: 'object', required: true, additionalProperties: true },
+            archive: { type: 'object', additionalProperties: true },
+          },
+        },
+      },
+      async execute(args) {
+        const entry = readBackups().find(item => item.id === args.id)
+        if (entry === undefined) throw new FilestoreError('FILESTORE_NOT_FOUND', `no backup with id ${JSON.stringify(args.id)}`)
+        return runBackupLocked(ctx, entry, filestore, resolveBackupSecret, {
+          ...(typeof persistSections === 'function' ? { persistSections: discovered => persistSections(entry.id, discovered) } : {}),
+          ...(typeof persistLastRun === 'function' ? { persistLastRun: lastRun => persistLastRun(entry.id, lastRun) } : {}),
+        })
+      },
+    }),
+  ]
+  return tools.map(tool => ({ ...tool, output: { ...tool.output, render: BACKUP_RENDERERS[tool.name] } }))
 }
 
 /**
@@ -1324,6 +1457,7 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     sections: [...entry.sections],
     credentialRef: entry.credentialRef,
     schedule: entry.schedule,
+    lastRun: entry.lastRun ?? null,
   })
 
   const listBackups = async () => {
@@ -1337,7 +1471,7 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
       if (typeof target?.describe === 'function') {
         keyConfigured = (await target.describe(entry.credentialRef).catch(() => undefined))?.configured === true
       }
-      out.push({ ...entry, keyConfigured })
+      out.push({ ...entry, keyConfigured, ...runStateOf(entry.id) })
     }
     const providersForSelect = normalizeEntries(providers).entries.map(entry => ({ id: entry.id, label: entry.label, type: entry.type }))
     return { status: 200, body: { backups: out, providers: providersForSelect } }
@@ -1347,6 +1481,9 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     const { providers, backups } = readDocument()
     const providerIds = normalizeEntries(providers).entries.map(entry => entry.id)
     const existing = typeof body?.id === 'string' ? backups.findIndex(entry => entry?.id === body.id) : -1
+    if (existing >= 0 && getRun(backups[existing].id) !== undefined) {
+      return { status: 409, body: { code: 'BACKUP_ALREADY_RUNNING', message: `backup ${backups[existing].id} is already running` } }
+    }
     const base = existing >= 0 ? normalizeBackupEntry(backups[existing], existing, providerIds) : undefined
     const candidate = normalizeBackupEntry({
       ...(base ?? {}),
@@ -1372,6 +1509,9 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     const { backups } = readDocument()
     const index = backups.findIndex(entry => entry?.id === body?.id)
     if (index < 0) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
+    if (getRun(backups[index].id) !== undefined) {
+      return { status: 409, body: { code: 'BACKUP_ALREADY_RUNNING', message: `backup ${backups[index].id} is already running` } }
+    }
     await writeBackups(backups.filter((_, position) => position !== index))
     return { status: 200, body: { deleted: true } }
   }
@@ -1382,16 +1522,24 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     const entries = normalizeBackupEntries(backups, providerIds)
     const entry = entries.find(item => item.id === body?.id)
     if (entry === undefined) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
-    const result = await runBackup(ctx, entry, filestore, resolveSecretValue, {
+    const result = await runBackupLocked(ctx, entry, filestore, resolveSecretValue, {
       persistSections: discovered => persistBackupSections(entry.id, discovered),
+      persistLastRun: lastRun => persistBackupLastRun(entry.id, lastRun),
     })
-    return { status: 200, body: result }
+    return { status: result.code === 'BACKUP_ALREADY_RUNNING' ? 409 : 200, body: result }
   }
 
   /** Write the discovered section list back into one backup entry. */
   const persistBackupSections = async (id, sections) => {
     const { backups } = readDocument()
     const next = backups.map(entry => (entry?.id === id ? { ...entry, sections: [...sections] } : entry))
+    await writeBackups(next)
+  }
+
+  /** Write a run's last-attempt record back into one backup entry. */
+  const persistBackupLastRun = async (id, lastRun) => {
+    const { backups } = readDocument()
+    const next = backups.map(entry => (entry?.id === id ? { ...entry, lastRun } : entry))
     await writeBackups(next)
   }
 
@@ -1904,6 +2052,7 @@ export const Config = z.object({
     sections: z.array(z.string()).default([]),
     credentialRef: z.string().default(''),
     schedule: z.string().default(''),
+    lastRun: z.any().default(null),
   })).default([]).volatile(),
 })
 
@@ -1982,6 +2131,16 @@ export function apply(ctx, config = {}) {
     await settings.update(SETTINGS_NAMESPACE, { ...(descriptor?.value ?? {}), backups: next }).catch(() => {})
   }
 
+  /** Persist a run's last-attempt record back into one backup entry. */
+  const persistBackupLastRun = async (id, lastRun) => {
+    const settings = shared.settings
+    if (settings === null || typeof settings.update !== 'function') return
+    const descriptor = settings.describe().find(entry => String(entry.ns) === SETTINGS_NAMESPACE)
+    const stored = Array.isArray(descriptor?.value?.backups) ? descriptor.value.backups : []
+    const next = stored.map(entry => (entry?.id === id ? { ...entry, lastRun } : entry))
+    await settings.update(SETTINGS_NAMESPACE, { ...(descriptor?.value ?? {}), backups: next }).catch(() => {})
+  }
+
   // Self-backup: dsh-storage participates in its own backup. The prepare event
   // is synchronous (config + RESTORE.md written with sync fs); the section event
   // is asynchronous, so the owned credentials are resolved there and the status
@@ -2015,11 +2174,14 @@ export function apply(ctx, config = {}) {
         const minute = Math.floor(Date.now() / 60000)
         if ((lastRunAt.get(entry.id) ?? -1) === minute) continue
         lastRunAt.set(entry.id, minute)
-        const result = await runBackup(child, entry, filestore, resolveBackupSecret, {
+        const result = await runBackupLocked(child, entry, filestore, resolveBackupSecret, {
           persistSections: discovered => persistBackupSections(entry.id, discovered),
+          persistLastRun: lastRun => persistBackupLastRun(entry.id, lastRun),
         })
         if (result.code === 'ok') {
           child.logger?.info?.(`[dsh-storage] cron backup ${entry.name}: ${result.message}`)
+        } else if (result.code === 'BACKUP_ALREADY_RUNNING') {
+          child.logger?.info?.(`[dsh-storage] cron backup ${entry.name}: already running, skipped`)
         } else {
           const line = `[dsh-storage] cron backup ${entry.name} failed: ${result.code} ${result.message}`
           child.logger?.error?.(line)
@@ -2042,6 +2204,15 @@ export function apply(ctx, config = {}) {
 
   ctx.inject(['tools'], child => {
     for (const tool of createStorageTools(filestore)) child.tools.register(tool)
+    for (const tool of createBackupTools({
+      ctx: child,
+      filestore,
+      readBackups,
+      resolveBackupSecret,
+      persistSections: persistBackupSections,
+      persistLastRun: persistBackupLastRun,
+      credentialsOf: () => shared.credentials,
+    })) child.tools.register(tool)
   })
 
   ctx.inject(['systemPrompt'], child => {
@@ -2049,6 +2220,10 @@ export function apply(ctx, config = {}) {
       const hasStorage = filestore.entries().some(entry => entry.enabled)
       if (!hasStorage) return undefined
       return child.systemPrompt.section({ name: 'tool:filestore', text: PROMPT_TEXT })
+    })
+    child.effect(() => {
+      if (readBackups().length === 0) return undefined
+      return child.systemPrompt.section({ name: 'tool:backup', text: BACKUP_PROMPT_TEXT })
     })
   })
 

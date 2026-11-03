@@ -5,10 +5,11 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdi
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
-  atomicWriteStatus, archiveNamePattern, backupTimestamp, BackupWorkspace, buildBackupContainer, buildSectionPayload,
-  classifySection, collectPids, decodeBackupKey, discoverSections, dispatchBackupStart, encodeBackupKey, filterSections,
-  isIgnoredSection, makeBackupId, makeBackupKeyRef, nextBackupId, normalizeBackupEntry, normalizePids, processSection,
-  readSectionStatus, runBackup, sanitizeBackupName, trimBackupKey,
+  acquireRun, atomicWriteStatus, archiveNamePattern, backupTimestamp, BackupWorkspace, buildBackupContainer,
+  buildSectionPayload, classifySection, collectPids, decodeBackupKey, discoverSections, dispatchBackupStart,
+  encodeBackupKey, filterSections, getRun, isIgnoredSection, makeBackupId, makeBackupKeyRef, nextBackupId,
+  normalizeBackupEntry, normalizePids, processSection, readSectionStatus, releaseRun, runBackup, runBackupLocked,
+  runStateOf, sanitizeBackupName, trimBackupKey,
 } from '../backup.mjs'
 import { createLocalDriver, normalizeEntry } from '../index.mjs'
 
@@ -428,5 +429,56 @@ test('integration: backup-start child runs ~30s, engine polls ~1/s and completes
     } finally {
       child?.kill('SIGKILL')
     }
+  })
+})
+
+test('acquireRun guards duplicate runs and releaseRun cleans up', () => {
+  acquireRun('bk-0001')
+  try {
+    assert.throws(() => acquireRun('bk-0001'), /already running/)
+    assert.equal(runStateOf('bk-0001').running, true)
+    assert.ok(runStateOf('bk-0001').startedAt)
+    assert.equal(getRun('bk-0001') !== undefined, true)
+  } finally {
+    releaseRun('bk-0001')
+  }
+  assert.equal(getRun('bk-0001'), undefined)
+  assert.equal(runStateOf('bk-0001').running, false)
+  assert.equal(runStateOf('bk-0001').startedAt, null)
+})
+
+test('runBackupLocked returns BACKUP_ALREADY_RUNNING and releases after success', async () => {
+  await withStorage(async ({ dshHome, driver }) => {
+    const entry = { id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk', rotation: 2, timeoutSeconds: 5, ignore: ['*'], include: [], credentialRef: 'X' }
+    const ctx = { emit() {}, bail() { return undefined }, async parallel() {} }
+
+    acquireRun('bk-0001')
+    const locked = await runBackupLocked(ctx, entry, { driver: () => driver }, async () => undefined, { dshHome })
+    assert.equal(locked.code, 'BACKUP_ALREADY_RUNNING')
+    releaseRun('bk-0001')
+
+    const done = await runBackupLocked(ctx, entry, { driver: () => driver }, async () => undefined, { dshHome })
+    assert.equal(done.code, 'ok')
+    assert.equal(getRun('bk-0001'), undefined, 'lock released in finally')
+  })
+})
+
+test('runBackupLocked persists lastRun on start and finish', async () => {
+  await withStorage(async ({ dshHome, driver }) => {
+    const entry = { id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk', rotation: 2, timeoutSeconds: 5, ignore: ['*'], include: [], credentialRef: 'X' }
+    const ctx = { emit() {}, bail() { return undefined }, async parallel() {} }
+    const persisted = []
+    const result = await runBackupLocked(ctx, entry, { driver: () => driver }, async () => undefined, {
+      dshHome,
+      persistLastRun: lastRun => persisted.push(lastRun),
+    })
+    assert.equal(result.code, 'ok')
+    assert.equal(persisted.length, 2)
+    assert.equal(persisted[0].code, 'running')
+    assert.ok(persisted[0].startedAt)
+    assert.equal(persisted[0].finishedAt, undefined)
+    assert.equal(persisted[1].code, 'ok')
+    assert.ok(persisted[1].finishedAt)
+    assert.equal(typeof persisted[1].message, 'string')
   })
 })

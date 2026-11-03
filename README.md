@@ -226,6 +226,19 @@ credentials и собственный RESTORE.md внутри зашифрова
 RESTORE.md внутри; `status.json` исключён). Позже участника планируется убрать
 или сделать config-флагом.
 
+### Run-state и lastRun
+
+На каждый backup id держится in-process lock (один процесс): одновременный
+запуск того же id возвращает `code: "BACKUP_ALREADY_RUNNING"` (HTTP 409 для
+API, machine-readable для `backup_run`). Пока id running, его `save`/`delete`
+тоже отвечают 409. `finally` снимает lock при любом исходе.
+
+В настройках записи хранится `lastRun: { startedAt, finishedAt?, code, message }`:
+при старте пишется `startedAt` + `code: "running"`, по завершении — `finishedAt`,
+code и message. `GET /backups` и `backup_list` отдают `running`/`startedAt` и
+`lastRun`; GUI показывает статус/время последней попытки и периодически
+обновляет список во время run.
+
 ### Ограничения (host API не позволяет)
 
 - **Cron**: готового cron-сервиса у хоста нет, поэтому шедулер — внутренний,
