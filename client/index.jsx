@@ -412,7 +412,9 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
             `${t('deviceOpen')} `,
             jsx('a', { href: device.verificationUrl, target: '_blank', rel: 'noreferrer', children: t('deviceOpenLink') }),
           ] }),
-          device === null ? null : jsx('div', { style: { ...styles.hint, marginTop: 6 }, children: device.status === 'ok' ? t('deviceDone') : device.status === 'error' ? `${t('failed')}: ${device.error}` : t('deviceWaiting') }),
+          device === null ? null : jsx('div', { style: { ...styles.hint, marginTop: 6 }, children: device.status === 'ok'
+            ? (editing ? t('deviceDone') : t('deviceDoneUnsaved'))
+            : device.status === 'error' ? `${t('failed')}: ${device.error}` : t('deviceWaiting') }),
         ] }),
       ] })
       : jsxs('div', { children: [
