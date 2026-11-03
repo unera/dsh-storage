@@ -665,6 +665,241 @@ export function StoragePage(props) {
   ] })
 }
 
+const BACKUP_SECTION_ID = 'backup'
+
+/** One backup row. */
+function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, running }) {
+  const provider = providers.find(item => item.id === backup.providerId)
+  return jsx('tr', {
+    children: [
+      jsx('td', { style: styles.td, children: [
+        jsx('strong', { children: backup.name }),
+        jsx('div', { style: styles.hint, children: `${provider?.label ?? backup.providerId} · ${backup.id}` }),
+        backup.directory === '' ? null : jsx('div', { style: styles.hint, children: backup.directory }),
+      ] }),
+      jsx('td', { style: styles.td, children: jsx('div', { style: styles.badges, children: [
+        jsx(Pill, { tone: styles.pillGrey, hint: t('backup.rotationHint'), children: `↻ ${backup.rotation}` }),
+        backup.keyConfigured ? jsx(Pill, { tone: styles.pillOk, hint: t('backup.keySet'), children: '🔑' }) : null,
+        backup.schedule === '' ? null : jsx(Pill, { tone: styles.pillFree, hint: t('backup.schedule'), children: backup.schedule }),
+      ] }) }),
+      jsx('td', { style: { ...styles.td, whiteSpace: 'nowrap', verticalAlign: 'top' }, children: jsx('div', { style: styles.buttonColumn, children: [
+        running
+          ? jsx(Pill, { tone: styles.pillGrey, hint: t('backup.running'), children: jsx('span', { style: styles.spinner }) })
+          : jsx(IconButton, { icon: 'test', title: t('backup.run'), disabled: busy, onClick: () => onRun(backup.id) }),
+        jsx(IconButton, { icon: 'edit', title: t('backup.edit'), disabled: busy, onClick: () => onEdit(backup.id) }),
+        jsx(IconButton, { icon: 'remove', title: t('backup.remove'), disabled: busy, onClick: () => onRemove(backup.id) }),
+      ] }) }),
+    ],
+  })
+}
+
+/** The backup form: name, provider, directory, rotation, timeout, ignore, key. */
+function BackupForm({ providers, t, initial, onCancel, onSaved }) {
+  const [name, setName] = useState(initial?.name ?? '')
+  const [providerId, setProviderId] = useState(initial?.providerId ?? providers[0]?.id ?? '')
+  const [directory, setDirectory] = useState(initial?.directory ?? '')
+  const [rotation, setRotation] = useState(String(initial?.rotation ?? 10))
+  const [timeoutSeconds, setTimeoutSeconds] = useState(String(initial?.timeoutSeconds ?? 300))
+  const [ignore, setIgnore] = useState((initial?.ignore ?? []).join('\n'))
+  const [key, setKey] = useState('')
+  const [schedule, setSchedule] = useState(initial?.schedule ?? '')
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const editing = initial !== undefined
+
+  const submit = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await request('/backups/save', {
+        method: 'POST',
+        body: {
+          ...(editing ? { id: initial.id } : {}),
+          name: name.trim(),
+          providerId,
+          directory: directory.trim(),
+          rotation: Number(rotation) || 10,
+          timeoutSeconds: Number(timeoutSeconds) || 300,
+          ignore: ignore.split('\n').map(item => item.trim()).filter(item => item !== ''),
+          schedule: schedule.trim(),
+          ...(key.trim() === '' ? {} : { key }),
+        },
+      })
+      await onSaved()
+    } catch (problem) {
+      setError(problem.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return jsx('div', { style: styles.form, children: [
+    jsx('div', { style: styles.row, children: [
+      jsx('label', { style: styles.field, children: [
+        jsx('span', { children: t('backup.name') }),
+        jsx('input', { style: styles.input, value: name, placeholder: t('backup.namePlaceholder'), onChange: event => setName(event.target.value) }),
+      ] }),
+      jsx('label', { style: styles.field, children: [
+        jsx('span', { children: t('backup.provider') }),
+        jsx('select', { style: styles.input, value: providerId, onChange: event => setProviderId(event.target.value), children: providers.map(item => jsx('option', { value: item.id, children: item.label }, item.id)) }),
+      ] }),
+      jsx('label', { style: styles.field, children: [
+        jsx('span', { children: t('backup.directory') }),
+        jsx('input', { style: styles.input, value: directory, placeholder: 'backups', onChange: event => setDirectory(event.target.value) }),
+        jsx('span', { style: styles.hint, children: t('backup.directoryHint') }),
+      ] }),
+    ] }),
+    jsx('div', { style: styles.row, children: [
+      jsx('label', { style: styles.field, children: [
+        jsx('span', { children: t('backup.rotation') }),
+        jsx('input', { style: styles.input, type: 'number', min: 0, value: rotation, onChange: event => setRotation(event.target.value) }),
+      ] }),
+      jsx('label', { style: styles.field, children: [
+        jsx('span', { children: t('backup.timeout') }),
+        jsx('input', { style: styles.input, type: 'number', min: 1, value: timeoutSeconds, onChange: event => setTimeoutSeconds(event.target.value) }),
+        jsx('span', { style: styles.hint, children: t('backup.timeoutHint') }),
+      ] }),
+      jsx('label', { style: styles.field, children: [
+        jsx('span', { children: t('backup.schedule') }),
+        jsx('input', { style: styles.input, value: schedule, placeholder: '0 3 * * *', onChange: event => setSchedule(event.target.value) }),
+        jsx('span', { style: styles.hint, children: t('backup.scheduleHint') }),
+      ] }),
+    ] }),
+    jsx('label', { style: styles.field, children: [
+      jsx('span', { children: t('backup.ignore') }),
+      jsx('textarea', { style: { ...styles.input, minHeight: 52 }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
+      jsx('span', { style: styles.hint, children: t('backup.ignoreHint') }),
+    ] }),
+    jsx('label', { style: { ...styles.field, marginTop: 8 }, children: [
+      jsx('span', { children: t('backup.key') }),
+      jsx(LineField, { value: key, onChange: setKey }),
+      jsx('span', { style: styles.hint, children: editing ? t('backup.keyKeep') : t('backup.keyHint') }),
+    ] }),
+    error === null ? null : jsx('div', { style: styles.error, children: error }),
+    jsx('div', { style: { marginTop: 12, display: 'flex', gap: 8 }, children: [
+      jsx('button', { style: styles.button, disabled: busy, onClick: submit, children: [
+        jsx('img', { src: ICONS.save, alt: '', style: { ...styles.icon, display: 'inline-block', verticalAlign: '-3px', marginRight: 6 } }),
+        t('save'),
+      ] }),
+      jsx('button', { style: styles.button, disabled: busy, onClick: onCancel, children: [
+        jsx('img', { src: ICONS.cancel, alt: '', style: { ...styles.icon, display: 'inline-block', verticalAlign: '-3px', marginRight: 6 } }),
+        t('cancel'),
+      ] }),
+    ] }),
+  ] })
+}
+
+/** The backup settings section. */
+export function BackupPage(props) {
+  const t = typeof props?.t === 'function' ? props.t : key => key
+  const [backups, setBackups] = useState([])
+  const [providers, setProviders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [runningId, setRunningId] = useState(null)
+  const [result, setResult] = useState(null)
+
+  const fetchOnce = async () => {
+    const body = await request('/backups')
+    const next = Array.isArray(body.backups) ? body.backups : []
+    if (Array.isArray(body.providers)) setProviders(body.providers)
+    setBackups(next)
+    return next
+  }
+
+  const load = async () => {
+    setError(null)
+    try {
+      await fetchOnce()
+    } catch (problem) {
+      setError(problem.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const run = async id => {
+    setRunningId(id)
+    setResult(null)
+    setBusy(true)
+    setError(null)
+    try {
+      setResult(await request('/backups/run', { method: 'POST', body: { id } }))
+    } catch (problem) {
+      setError(problem.message)
+    } finally {
+      setBusy(false)
+      setRunningId(null)
+    }
+  }
+
+  const remove = async id => {
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function' && !window.confirm(t('backup.confirmRemove'))) return
+    setBusy(true)
+    setError(null)
+    try {
+      await request('/backups/delete', { method: 'POST', body: { id } })
+      await load()
+    } catch (problem) {
+      setError(problem.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const form = adding
+    ? { key: 'new' }
+    : editingId === null
+      ? null
+      : (() => {
+        const backup = backups.find(item => item.id === editingId)
+        return backup === undefined ? null : { key: backup.id, initial: { ...backup } }
+      })()
+
+  return jsx('div', { children: [
+    jsx('p', { style: styles.intro, children: t('backup.intro') }),
+    loading ? jsx('p', { style: styles.hint, children: t('loading') }) : null,
+    error === null ? null : jsx('div', { style: styles.error, children: error }),
+    result === null ? null : jsx('div', { style: { ...styles.form, marginTop: 0 }, children: [
+      jsx('strong', { children: result.code === 'ok' ? t('backup.ok') : t('backup.failed') }),
+      jsx('div', { style: styles.hint, children: result.message }),
+    ] }),
+    form === null
+      ? jsx('button', { style: styles.button, disabled: busy || loading, onClick: () => { setAdding(true); setEditingId(null) }, children: t('backup.add') })
+      : jsx(BackupForm, {
+        key: form.key,
+        providers,
+        t,
+        initial: form.initial,
+        onCancel: () => { setAdding(false); setEditingId(null) },
+        onSaved: async () => { setAdding(false); setEditingId(null); await load() },
+      }),
+    backups.length === 0 && !loading ? jsx('p', { style: styles.hint, children: t('backup.empty') }) : null,
+    backups.length === 0 ? null : jsx('table', { style: styles.table, children: [
+      jsx('thead', { children: jsx('tr', { children: [
+        jsx('th', { style: { ...styles.th, width: '100%' }, children: t('backup.name') }),
+        jsx('th', { style: { ...styles.th, whiteSpace: 'nowrap' }, children: '' }),
+        jsx('th', { style: { ...styles.th, whiteSpace: 'nowrap' }, children: '' }),
+      ] }) }),
+      jsx('tbody', { children: backups.map(backup => jsx(BackupRow, {
+        backup,
+        providers,
+        t,
+        busy,
+        running: runningId === backup.id,
+        onRun: run,
+        onEdit: id => { setEditingId(id); setAdding(false) },
+        onRemove: remove,
+      }, backup.id)) }),
+    ] }),
+  ] })
+}
+
 /** Client entry: dictionaries first, then the settings section. */
 export function apply(ctx) {
   let t = key => key
@@ -708,6 +943,14 @@ export function apply(ctx) {
     locale: NS,
     label: () => t('nav.title'),
   }, StoragePage))
+
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: BACKUP_SECTION_ID,
+    order: 37,
+    locale: NS,
+    label: () => t('backup.nav.title'),
+  }, BackupPage))
 }
 
 export const inject = ['slots', 'locale']

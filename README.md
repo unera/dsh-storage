@@ -1,9 +1,11 @@
 # dsh-storage
 
 Remote disks for DeepSeek Harness: a model gets storages it can look at, read
-from and write to, and later the same storages carry full backups.
+from and write to, and the same storages carry encrypted backups.
 
-Пока это **этап 1** — чистый диск. Бэкапов здесь ещё нет.
+Бэкап — **не отдельный плагин и не отдельный пакет**: это расширение
+`@dr-co/dsh-storage` в том же namespace настроек, том же админ-API и той же
+клиентской панели. Движок лежит в `backup.mjs` (export `./backup`).
 
 ## Что уже есть
 
@@ -108,6 +110,69 @@ dsh plugin --profile web add @dr-co/dsh-storage
 Ключ — POSIX-путь внутри `basePath`, не абсолютный путь. Запрещены `..`, `.`,
 пустые сегменты, NUL и длина больше 1024. Разрешение пути никогда не выходит
 за корень хранилища.
+
+## Бэкапы
+
+Карточка бэкапа в админке: `name`, `providerId` (id одного из настроенных
+хранилищ), `directory` (каталог внутри хранилища), `rotation` (сколько пар
+архивов хранить, по умолчанию 10), `timeoutSeconds` (таймаут одной секции,
+по умолчанию 300), `ignore` (глобы имён секций), `key` (ключ шифрования) и
+необязательный `schedule` (пятипольный cron).
+
+### Событийная модель
+
+- `dsh-storage/prepare-backup` — синхронно (`ctx.emit`), получает
+  `BackupWorkspace`. Участники синхронно создают любое число секций через
+  `workspace.section(name)`; секция — это каталог, может нести
+  `RESTORE.md` и обязана поддерживать `status.json`.
+- `dsh-storage/backup-section` — асинхронно (`ctx.parallel`), получает
+  `{ directory, section, signal }`. Приёмник обязан **атомарно** переписать
+  `status.json` через временный файл + `rename` (меняет inode), даже если
+  статус не изменился; отсутствие перезаписи — немедленная ошибка.
+- Секции обрабатываются последовательно; секции разных участников
+  чередуются обычной сортировкой имён.
+
+`status.json`: `{ status, updatedAt, pids, message? }`. `status` — `ok`,
+`running`, `error` или `child-failed`; `pids` — PID дочерних процессов,
+которые хост убивает (`SIGKILL`) при любой ошибке. Результат любого запуска
+содержит `code` и `message`; при ошибке — структурированные `details.sections`
+с исходом (`timeout`, `no-status-update`, `error-status`, `child-failure`).
+
+### Архив
+
+`<sanitized-name>_YYYY-MM-DD_HH.mm.ssZ.tar` и рядом `.sha256` (формат
+`sha256sum`). Ключ задан — имя получает суффикс `.tar.gpg`, а тело — стандартное
+OpenPGP-сообщение, которое читает CLI `gpg`. Шифрование потоковое через
+OpenPGP.js, внешний `gpg` не нужен. Ключ: обрезаются только начальные/конечные
+пробелы, внутренние сохраняются, UTF-8 байты → base64 в credentials; при
+использовании — обратное декодирование.
+
+Workspace живёт внутри дерева DSH (`<DSH_HOME>/storage/backups/…`), не в `/tmp`,
+и удаляется после завершения. Пустой бэкап (нет секций) возвращает
+`code: "ok"`, `message: "empty backup was not uploaded"` и ничего не грузит.
+
+### Админ-API
+
+Под `/api/filestore` (канал владельца, как у хранилищ):
+
+| метод | путь | что делает |
+| --- | --- | --- |
+| GET | `/api/filestore/backups` | список бэкапов + хранилища для выбора |
+| POST | `/api/filestore/backups/save` | создать/изменить (`key` кодируется в credentials) |
+| POST | `/api/filestore/backups/delete` | удалить запись |
+| POST | `/api/filestore/backups/run` | запустить сейчас, вернуть результат |
+
+### Ограничения (host API не позволяет)
+
+- **Cron**: готового cron-сервиса у хоста нет, поэтому шедулер — внутренний,
+  тикает раз в минуту по полю `schedule`. Ошибка cron логируется в stderr;
+  успех просто возвращает результат.
+- **Пробуждение модели**: публичного сервиса «разбудить модель» для фонового
+  плагина нет. Есть seam `config.notifyBackupError(result)` — по умолчанию
+  только лог; привязка к inbox агента остаётся на стороне хоста.
+- **Секции и статусы**: статус-строки секций и семантика дочерних процессов —
+  контракт участника; хост считает ошибкой всё, кроме `ok`.
+- **Dropbox и Google** не добавлялись и не возвращаются.
 
 ## Тесты
 

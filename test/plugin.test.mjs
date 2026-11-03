@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools, nextEntryId, createFilestoreHandler } from '../index.mjs'
+import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools, nextEntryId, createFilestoreHandler, cronMatches } from '../index.mjs'
 
 /**
  * Boot the plugin for real: a genuine cordis Context with the services it injects
@@ -13,7 +13,7 @@ import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools, nextEntryI
  */
 async function boot({ providers = [], resolveValue = undefined, failWrites = false } = {}) {
   const ctx = new Context()
-  const record = { tools: [], sections: [], routes: [], configured: [], document: { providers } }
+  const record = { tools: [], sections: [], routes: [], configured: [], document: { providers }, secrets: [] }
   ctx.provide('tools', { register: tool => record.tools.push(tool) })
   ctx.provide('systemPrompt', {
     section: section => { record.sections.push(section); return () => {} },
@@ -38,7 +38,7 @@ async function boot({ providers = [], resolveValue = undefined, failWrites = fal
   })
   ctx.provide('credentials', {
     resolve: async () => resolveValue,
-    set: async () => {},
+    set: async (ref, value) => { record.secrets.push([ref, value]) },
     describe: async () => ({ configured: false }),
   })
   apply(ctx, {})
@@ -92,7 +92,7 @@ function call(handler, { method = 'GET', url, body }) {
   })
 }
 
-test('seven tools register, plus one admin route', async () => {
+test('seven tools register, plus admin routes', async () => {
   const { ctx, record } = await boot()
   try {
     assert.equal(record.tools.length, 7)
@@ -100,8 +100,12 @@ test('seven tools register, plus one admin route', async () => {
       'storage_delete', 'storage_df', 'storage_list', 'storage_ls', 'storage_mkdir', 'storage_read', 'storage_write',
     ])
     assert.deepEqual(record.configured, [{ auto: true }])
-    // Seven exact routes under /api, which the host admits only for its owner.
+    // Eleven exact routes under /api, which the host admits only for its owner.
     assert.deepEqual(record.routes.map(route => route.path).sort(), [
+      '/api/filestore/backups',
+      '/api/filestore/backups/delete',
+      '/api/filestore/backups/run',
+      '/api/filestore/backups/save',
       '/api/filestore/device/poll',
       '/api/filestore/device/start',
       '/api/filestore/providers',
@@ -293,4 +297,51 @@ test('the admin routes are registered on the host channel, not as an open prefix
   } finally {
     await ctx.stop?.()
   }
+})
+
+test('the backup admin API saves a key encoded, lists and runs a backup', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'dsh-storage-backup-api-'))
+  try {
+    const { ctx, record } = await boot({ providers: [{ id: 'st-0001', type: 'local', label: 'tmp', role: 'primary', options: { root } }] })
+    try {
+      const saved = await callApi(record, {
+        method: 'POST',
+        path: '/api/filestore/backups/save',
+        body: { name: 'daily', providerId: 'st-0001', directory: 'bk', rotation: 3, timeoutSeconds: 300, ignore: ['logs'], key: '  secret   key  ' },
+      })
+      assert.equal(saved.status, 201)
+      assert.equal(saved.body.backup.name, 'daily')
+      assert.equal(saved.body.backup.rotation, 3)
+      assert.deepEqual(saved.body.backup.ignore, ['logs'])
+      // The key is trimmed (outer spaces only) and stored as UTF-8 bytes -> base64.
+      const keySecret = record.secrets.find(([ref]) => String(ref).includes('BACKUP_BK_0001_KEY'))
+      assert.equal(keySecret[1], Buffer.from('secret   key', 'utf8').toString('base64'))
+
+      const listed = await callApi(record, { path: '/api/filestore/backups' })
+      assert.equal(listed.body.backups.length, 1)
+      assert.equal(listed.body.providers[0].id, 'st-0001')
+
+      const run = await callApi(record, { method: 'POST', path: '/api/filestore/backups/run', body: { id: 'bk-0001' } })
+      assert.equal(run.status, 200)
+      // No participants create sections in this boot, so it is an empty backup.
+      assert.equal(run.body.code, 'ok')
+      assert.equal(run.body.message, 'empty backup was not uploaded')
+    } finally {
+      await ctx.stop?.()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('cronMatches understands star, step, list and range fields', () => {
+  const at = (minute, hour, dom, month, dow) => new Date(2026, month - 1, dom, hour, minute, 0, 0)
+  assert.equal(cronMatches('0 3 * * *', at(0, 3, 5, 11, 3)), true)
+  assert.equal(cronMatches('0 3 * * *', at(1, 3, 5, 11, 3)), false)
+  assert.equal(cronMatches('*/15 * * * *', at(30, 4, 5, 11, 3)), true)
+  assert.equal(cronMatches('*/15 * * * *', at(5, 4, 5, 11, 3)), false)
+  assert.equal(cronMatches('0 9 * * 1-5', at(0, 9, 6, 11, 3)), true)
+  assert.equal(cronMatches('0 9 * * 1-5', at(0, 9, 8, 11, 6)), false)
+  assert.equal(cronMatches('0 9,18 * * *', at(0, 18, 6, 11, 3)), true)
+  assert.equal(cronMatches('0 9,18 * * *', at(0, 12, 6, 11, 3)), false)
 })

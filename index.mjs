@@ -31,9 +31,59 @@ import { createHash } from 'node:crypto'
 import { createS3Driver } from './s3.mjs'
 import { createWebdavDriver } from './webdav.mjs'
 import { createYandexDriver } from './yadisk.mjs'
+import {
+  BackupWorkspace, DEFAULT_ROTATION, DEFAULT_TIMEOUT_SECONDS, atomicWriteStatus, backupTimestamp, decodeBackupKey,
+  encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries, normalizeBackupEntry,
+  readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
+} from './backup.mjs'
 
 /** Stable Loader identity. */
 export const name = 'dsh-storage'
+
+// Re-export the backup engine so participants and tests reach one surface.
+export {
+  BackupWorkspace, DEFAULT_ROTATION, DEFAULT_TIMEOUT_SECONDS, atomicWriteStatus, backupTimestamp, decodeBackupKey,
+  encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries, normalizeBackupEntry,
+  readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
+}
+
+/** Events the backup engine dispatches on the plugin context. */
+export const BACKUP_EVENTS = Object.freeze({
+  prepare: 'dsh-storage/prepare-backup',
+  section: 'dsh-storage/backup-section',
+})
+
+/**
+ * Minimal five-field cron matcher (`minute hour day-of-month month day-of-week`)
+ * for the in-process backup scheduler. There is no host cron service, so the
+ * plugin ticks once a minute and asks this whether a schedule fires now.
+ *
+ * Each field accepts a star, a star with a step, a comma list, a single value,
+ * or a `a-b` range. Day-of-week is 0 (Sunday) through 6.
+ */
+export function cronMatches(expression, date = new Date()) {
+  const fields = String(expression ?? '').trim().split(/\s+/)
+  if (fields.length !== 5) return false
+  const values = [date.getMinutes(), date.getHours(), date.getDate(), date.getMonth() + 1, date.getDay()]
+  const matchField = (field, value) => field
+    .split(',')
+    .some(part => {
+      if (part === '*' || part === '') return true
+      if (part.includes('/')) {
+        const [base, stepText] = part.split('/')
+        const step = Number(stepText)
+        if (!Number.isInteger(step) || step <= 0) return false
+        if (base === '*') return value % step === 0
+        return matchField(base, value) && value % step === 0
+      }
+      if (part.includes('-')) {
+        const [start, end] = part.split('-').map(Number)
+        return Number.isInteger(start) && Number.isInteger(end) && value >= start && value <= end
+      }
+      return Number(part) === value
+    })
+  return fields.every((field, index) => matchField(field, values[index]))
+}
 
 /** Settings namespace owning the entry list. */
 export const SETTINGS_NAMESPACE = 'dsh-storage'
@@ -1080,12 +1130,18 @@ export function sweepOauthStates(now = Date.now()) {
  * @param ctx - for the device log.
  */
 export function createFilestoreApi(settings, filestore, credentialsOf = () => null, ctx = undefined) {
-  const read = () => {
+  const readDocument = () => {
     const descriptor = settings.describe().find(entry => String(entry.ns) === SETTINGS_NAMESPACE)
     const value = descriptor?.value
-    return Array.isArray(value?.providers) ? value.providers.map(entry => ({ ...entry })) : []
+    return {
+      providers: Array.isArray(value?.providers) ? value.providers.map(entry => ({ ...entry })) : [],
+      backups: Array.isArray(value?.backups) ? value.backups.map(entry => ({ ...entry })) : [],
+    }
   }
-  const write = providers => settings.update(SETTINGS_NAMESPACE, { providers })
+  const read = () => readDocument().providers
+  const writeDocument = document => settings.update(SETTINGS_NAMESPACE, document)
+  const writeProviders = providers => writeDocument({ ...readDocument(), providers })
+  const writeBackups = backups => writeDocument({ ...readDocument(), backups })
   const store = () => credentialsOf()
   const saveSecret = async (ref, value) => {
     const target = store()
@@ -1124,7 +1180,7 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     await saveSecret(makeCredentialRef(`${candidate.id}-client`), body?.clientSecret)
     const next = existing >= 0 ? providers.map((entry, index) => (index === existing ? { ...candidate } : entry)) : [...providers, { ...candidate }]
     if (body?.role === 'primary') for (const entry of next) if (entry.id !== candidate.id) entry.role = 'secondary'
-    await write(next)
+    await writeProviders(next)
     return { status: existing >= 0 ? 200 : 201, body: { provider: candidate } }
   }
 
@@ -1136,7 +1192,7 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     if (current?.role === 'primary' && providers.length > 1) {
       return { status: 409, body: { error: 'назначьте другое хранилище основным перед удалением', code: 'FILESTORE_PRIMARY_IN_USE' } }
     }
-    await write(providers.filter((_, position) => position !== index))
+    await writeProviders(providers.filter((_, position) => position !== index))
     return { status: 200, body: { deleted: true } }
   }
 
@@ -1150,7 +1206,7 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     const providers = read()
     const index = providers.findIndex(entry => entry?.id === body?.id)
     if (index < 0) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
-    await write(providers.map((entry, position) => ({ ...entry, role: position === index ? 'primary' : 'secondary' })))
+    await writeProviders(providers.map((entry, position) => ({ ...entry, role: position === index ? 'primary' : 'secondary' })))
     return { status: 200, body: { primary: body.id } }
   }
 
@@ -1228,7 +1284,88 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     return { status: 200, body: { status: record.done === true ? record.status : 'pending', ...(record.error === undefined ? {} : { error: record.error }) } }
   }
 
-  return { list, save, remove, test, primary, deviceStart, devicePoll }
+  const resolveSecretValue = async ref => {
+    const target = store()
+    if (target === null || typeof target.resolve !== 'function') return undefined
+    const resolved = await target.resolve(ref).catch(() => undefined)
+    if (resolved === undefined || resolved === null) return undefined
+    return typeof resolved === 'string' ? resolved : resolved.value
+  }
+
+  /** The fields of a normalized backup that belong in the settings document. */
+  const persistedBackup = entry => ({
+    id: entry.id,
+    name: entry.name,
+    providerId: entry.providerId,
+    directory: entry.directory,
+    rotation: entry.rotation,
+    timeoutSeconds: entry.timeoutSeconds,
+    ignore: [...entry.ignore],
+    credentialRef: entry.credentialRef,
+    schedule: entry.schedule,
+  })
+
+  const listBackups = async () => {
+    const { providers, backups } = readDocument()
+    const providerIds = normalizeEntries(providers).entries.map(entry => entry.id)
+    const entries = normalizeBackupEntries(backups, providerIds)
+    const target = store()
+    const out = []
+    for (const entry of entries) {
+      let keyConfigured = false
+      if (typeof target?.describe === 'function') {
+        keyConfigured = (await target.describe(entry.credentialRef).catch(() => undefined))?.configured === true
+      }
+      out.push({ ...entry, keyConfigured })
+    }
+    const providersForSelect = normalizeEntries(providers).entries.map(entry => ({ id: entry.id, label: entry.label, type: entry.type }))
+    return { status: 200, body: { backups: out, providers: providersForSelect } }
+  }
+
+  const saveBackup = async body => {
+    const { providers, backups } = readDocument()
+    const providerIds = normalizeEntries(providers).entries.map(entry => entry.id)
+    const existing = typeof body?.id === 'string' ? backups.findIndex(entry => entry?.id === body.id) : -1
+    const base = existing >= 0 ? normalizeBackupEntry(backups[existing], existing, providerIds) : undefined
+    const candidate = normalizeBackupEntry({
+      ...(base ?? {}),
+      ...body,
+      id: base?.id ?? (typeof body?.id === 'string' && /^bk-[a-z0-9]{4,16}$/i.test(body.id) && !backups.some(entry => entry?.id === body.id) ? body.id : nextBackupId(backups)),
+    }, existing >= 0 ? existing : backups.length, providerIds)
+    if (candidate === undefined) return { status: 400, body: { error: 'нужны имя и провайдер', code: 'BACKUP_BAD_REQUEST' } }
+    if (candidate.known !== true) return { status: 400, body: { error: `нет хранилища ${JSON.stringify(candidate.providerId)}`, code: 'BACKUP_UNKNOWN_PROVIDER' } }
+    // The key is trimmed (outer whitespace only), encoded as UTF-8 bytes -> base64,
+    // and stored in credentials; an empty key means "keep the stored one".
+    if (typeof body?.key === 'string') {
+      const trimmed = trimBackupKey(body.key)
+      if (trimmed !== '') await saveSecret(candidate.credentialRef, encodeBackupKey(trimmed))
+    }
+    const next = existing >= 0
+      ? backups.map((entry, index) => (index === existing ? persistedBackup(candidate) : entry))
+      : [...backups, persistedBackup(candidate)]
+    await writeBackups(next)
+    return { status: existing >= 0 ? 200 : 201, body: { backup: { ...candidate } } }
+  }
+
+  const removeBackup = async body => {
+    const { backups } = readDocument()
+    const index = backups.findIndex(entry => entry?.id === body?.id)
+    if (index < 0) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
+    await writeBackups(backups.filter((_, position) => position !== index))
+    return { status: 200, body: { deleted: true } }
+  }
+
+  const runBackupNow = async body => {
+    const { providers, backups } = readDocument()
+    const providerIds = normalizeEntries(providers).entries.map(entry => entry.id)
+    const entries = normalizeBackupEntries(backups, providerIds)
+    const entry = entries.find(item => item.id === body?.id)
+    if (entry === undefined) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
+    const result = await runBackup(ctx, entry, filestore, resolveSecretValue, {})
+    return { status: 200, body: result }
+  }
+
+  return { list, save, remove, test, primary, deviceStart, devicePoll, listBackups, saveBackup, removeBackup, runBackupNow }
 }
 
 /**
@@ -1268,6 +1405,10 @@ export function registerFilestoreRoutes(connection, api) {
     route('/api/filestore/providers/primary', ['POST'], body => api.primary(body)),
     route('/api/filestore/device/start', ['POST'], body => api.deviceStart(body)),
     route('/api/filestore/device/poll', ['POST'], body => api.devicePoll(body)),
+    route('/api/filestore/backups', ['GET'], () => api.listBackups()),
+    route('/api/filestore/backups/save', ['POST'], body => api.saveBackup(body)),
+    route('/api/filestore/backups/delete', ['POST'], body => api.removeBackup(body)),
+    route('/api/filestore/backups/run', ['POST'], body => api.runBackupNow(body)),
   ]
 }
 
@@ -1304,14 +1445,20 @@ async function readBody(request) {
  * @returns an HTTP handler.
  */
 export function createFilestoreHandler(settings, filestore, credentialsOf = () => null, ctx = undefined, guard = undefined) {
-  const read = () => {
+  const readDocument = () => {
     const descriptor = settings.describe().find(entry => String(entry.ns) === SETTINGS_NAMESPACE)
     const value = descriptor?.value
-    return Array.isArray(value?.providers) ? value.providers.map(entry => ({ ...entry })) : []
+    return {
+      providers: Array.isArray(value?.providers) ? value.providers.map(entry => ({ ...entry })) : [],
+      backups: Array.isArray(value?.backups) ? value.backups.map(entry => ({ ...entry })) : [],
+    }
   }
+  const read = () => readDocument().providers
   // Awaited by every caller: a rejected settings update is an unhandled rejection,
   // and an unhandled rejection ends the process.
-  const write = providers => settings.update(SETTINGS_NAMESPACE, { providers })
+  const writeDocument = document => settings.update(SETTINGS_NAMESPACE, document)
+  const writeProviders = providers => writeDocument({ ...readDocument(), providers })
+  const writeBackups = backups => writeDocument({ ...readDocument(), backups })
   const indexOf = (providers, raw) => {
     const index = Number(raw)
     if (!Number.isInteger(index) || index < 0 || index >= providers.length) {
@@ -1381,7 +1528,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         }
         const next = [...providers, { ...candidate }]
         if (body?.role === 'primary') for (const entry of next) if (entry.id !== candidate.id) entry.role = 'secondary'
-        await write(next)
+        await writeProviders(next)
         return json(response, 201, { provider: candidate })
       }
 
@@ -1645,7 +1792,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           const next = [...providers]
           next[index] = merged
           if (body?.role === 'primary') for (const [position, entry] of next.entries()) if (position !== index) entry.role = 'secondary'
-          await write(next)
+          await writeProviders(next)
           return json(response, 200, { provider: merged })
         }
 
@@ -1653,7 +1800,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           if (current.role === 'primary' && providers.length > 1) {
             return json(response, 409, { error: 'назначьте другое хранилище основным перед удалением', code: 'FILESTORE_PRIMARY_IN_USE' })
           }
-          await write(providers.filter((_, position) => position !== index))
+          await writeProviders(providers.filter((_, position) => position !== index))
           return json(response, 200, { deleted: true })
         }
 
@@ -1664,7 +1811,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
 
         if (request.method === 'POST' && parts[2] === 'primary') {
           const next = providers.map((entry, position) => ({ ...entry, role: position === index ? 'primary' : 'secondary' }))
-          await write(next)
+          await writeProviders(next)
           return json(response, 200, { primary: current.id })
         }
       }
@@ -1701,6 +1848,17 @@ export const Config = z.object({
     readOnly: z.boolean().default(false),
     basePath: z.string().default(''),
     options: z.object({}),
+  })).default([]).volatile(),
+  backups: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    providerId: z.string(),
+    directory: z.string().default(''),
+    rotation: z.number().default(DEFAULT_ROTATION),
+    timeoutSeconds: z.number().default(DEFAULT_TIMEOUT_SECONDS),
+    ignore: z.array(z.string()).default([]),
+    credentialRef: z.string().default(''),
+    schedule: z.string().default(''),
   })).default([]).volatile(),
 })
 
@@ -1746,6 +1904,63 @@ export function apply(ctx, config = {}) {
     }
     return fallback
   }
+
+  const readBackups = () => {
+    const settings = shared.settings
+    if (settings === null || typeof settings.describe !== 'function') return []
+    try {
+      const descriptor = settings.describe().find(entry => String(entry.ns) === SETTINGS_NAMESPACE)
+      const stored = descriptor?.value?.backups
+      if (!Array.isArray(stored)) return []
+      const providerIds = filestore.entries().map(entry => entry.id)
+      return normalizeBackupEntries(stored, providerIds)
+    } catch {
+      return []
+    }
+  }
+
+  const resolveBackupSecret = async ref => {
+    const store = shared.credentials
+    if (store === null || typeof store.resolve !== 'function') return undefined
+    const resolved = await store.resolve(ref).catch(() => undefined)
+    if (resolved === undefined || resolved === null) return undefined
+    return typeof resolved === 'string' ? resolved : resolved.value
+  }
+
+  // Cron scheduler. There is no host cron service, so the plugin ticks once a
+  // minute and runs any backup whose `schedule` matches the current minute.
+  // An error is logged and wakes the model through the optional seam; a success
+  // returns a clean result and nothing is woken.
+  ctx.inject(['settings', 'credentials'], child => {
+    const lastRunAt = new Map()
+    const tick = async () => {
+      for (const entry of readBackups()) {
+        if (entry.schedule === '' || !cronMatches(entry.schedule)) continue
+        const minute = Math.floor(Date.now() / 60000)
+        if ((lastRunAt.get(entry.id) ?? -1) === minute) continue
+        lastRunAt.set(entry.id, minute)
+        const result = await runBackup(child, entry, filestore, resolveBackupSecret, {})
+        if (result.code === 'ok') {
+          child.logger?.info?.(`[dsh-storage] cron backup ${entry.name}: ${result.message}`)
+        } else {
+          const line = `[dsh-storage] cron backup ${entry.name} failed: ${result.code} ${result.message}`
+          child.logger?.error?.(line)
+          console.error(line)
+          // Wake the model only on error. The host exposes no public wake
+          // service to background plugins, so this is a seam: wire it in the
+          // profile config to reach the agent inbox; the default is log-only.
+          if (typeof config.notifyBackupError === 'function') {
+            try { config.notifyBackupError(result) } catch { /* a notification must not take the tick down */ }
+          }
+        }
+      }
+    }
+    return child.effect(() => {
+      const timer = setInterval(() => { tick().catch(() => {}) }, 60 * 1000)
+      timer.unref?.()
+      return () => clearInterval(timer)
+    }, 'dsh-storage: backup scheduler')
+  })
 
   ctx.inject(['tools'], child => {
     for (const tool of createStorageTools(filestore)) child.tools.register(tool)

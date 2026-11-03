@@ -1,0 +1,668 @@
+/**
+ * Backups on top of the existing dsh-storage filestore.
+ *
+ * A backup is NOT a separate plugin or package: it extends `@dr-co/dsh-storage`
+ * in the same settings namespace, the same admin API surface and the same
+ * client panel. This module holds the engine only — event orchestration,
+ * section lifecycle, tar streaming, OpenPGP encryption and rotation — so it can
+ * be tested without a live cordis context.
+ *
+ * Event contract (see {@link runBackup}):
+ *   - `dsh-storage/prepare-backup`  sync; passes a {@link BackupWorkspace}.
+ *     Participants create any number of sections synchronously.
+ *   - `dsh-storage/backup-section`  async (`ctx.parallel`); passes
+ *     `{ directory, section, signal }`. The receiver MUST rewrite
+ *     `$section/status.json` atomically (temp file + rename) even when the
+ *     status value is unchanged; missing rewrite is an immediate error.
+ *
+ * A section is one direct subdirectory of the workspace. It may carry a
+ * `RESTORE.md` and must support a `status.json` of the shape
+ * `{ status, updatedAt, pids, message? }`, where `pids` are child process ids
+ * the receiver owns and the host kills on failure.
+ *
+ * @module @dr-co/dsh-storage/backup
+ */
+import { createReadStream, createWriteStream, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { homedir } from 'node:os'
+import path from 'node:path'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import * as openpgp from 'openpgp'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+
+/** Status values a section receiver may report. */
+export const SECTION_STATUS = Object.freeze(['ok', 'running', 'error', 'child-failed'])
+
+/** Section outcomes the host classifies. */
+export const SECTION_OUTCOMES = Object.freeze(['ok', 'ignored', 'timeout', 'no-status-update', 'error-status', 'child-failure'])
+
+/** Default per-section timeout, in seconds. */
+export const DEFAULT_TIMEOUT_SECONDS = 5 * 60
+
+/** Default number of kept archive pairs. */
+export const DEFAULT_ROTATION = 10
+
+/** Largest rotation count the admin API will accept. */
+export const MAX_ROTATION = 1000
+
+/** Largest per-section timeout the admin API will accept, in seconds. */
+export const MAX_TIMEOUT_SECONDS = 24 * 60 * 60
+
+/**
+ * Error carrying a stable backup code, distinct from the filestore vocabulary.
+ */
+export class BackupError extends Error {
+  constructor(code, message, options) {
+    super(message, options)
+    this.name = 'BackupError'
+    this.code = code
+  }
+}
+
+/** Map a section outcome onto the result code of a failed backup. */
+export function codeForOutcome(outcome) {
+  switch (outcome) {
+    case 'timeout': return 'BACKUP_TIMEOUT'
+    case 'no-status-update': return 'BACKUP_NO_STATUS_UPDATE'
+    case 'child-failure': return 'BACKUP_CHILD_FAILURE'
+    case 'error-status': return 'BACKUP_ERROR_STATUS'
+    default: return 'BACKUP_FAILED'
+  }
+}
+
+/** The DSH tree root: workspace and staging dirs live here, never in /tmp. */
+export function dshHome() {
+  return process.env.DSH_HOME ?? path.join(homedir(), '.dsh')
+}
+
+/** Directory under which backup workspaces are created. */
+export function backupWorkspacesDir(home = dshHome()) {
+  return path.join(home, 'storage', 'backups', 'workspace')
+}
+
+/** Directory under which archives are staged before upload. */
+export function backupStageDir(home = dshHome()) {
+  return path.join(home, 'storage', 'backups', 'stage')
+}
+
+/**
+ * Trim only leading and trailing whitespace of an encryption key; internal
+ * whitespace is preserved because a passphrase may legally contain it.
+ *
+ * @param value - raw key from the panel.
+ * @returns the trimmed key, or '' when nothing remains.
+ */
+export function trimBackupKey(value) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * Encode a key for the credentials store: UTF-8 bytes -> base64. A passphrase
+ * is bytes, not characters, so a stored secret must not depend on the locale.
+ */
+export function encodeBackupKey(key) {
+  return Buffer.from(key, 'utf8').toString('base64')
+}
+
+/** Reverse of {@link encodeBackupKey}: base64 -> UTF-8 bytes -> string. */
+export function decodeBackupKey(encoded) {
+  return Buffer.from(String(encoded), 'base64').toString('utf8')
+}
+
+/** Credential reference for a backup entry's encryption key. */
+export function makeBackupKeyRef(id) {
+  return credentialRef(`DSH_FILESTORE_BACKUP_${String(id).toUpperCase().replaceAll('-', '_')}_KEY`)
+}
+
+/** Stable id for a backup position; renaming never changes it. */
+export function makeBackupId(index) {
+  return `bk-${String(index + 1).padStart(4, '0')}`
+}
+
+/** A free backup id, like {@link makeBackupId} but never reused. */
+export function nextBackupId(existing) {
+  const taken = new Set((existing ?? []).map(entry => (typeof entry === 'string' ? entry : entry?.id)))
+  for (let index = 0; index < 10000; index += 1) {
+    const candidate = makeBackupId(index)
+    if (!taken.has(candidate)) return candidate
+  }
+  return `bk-${randomUUID().slice(0, 8)}`
+}
+
+/** Sanitize a backup name into a safe archive basename prefix. */
+export function sanitizeBackupName(name) {
+  const cleaned = String(name ?? '').trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+  return cleaned === '' ? 'backup' : cleaned
+}
+
+/** Archive timestamp: `YYYY-MM-DD_HH.mm.ssZ` in UTC. */
+export function backupTimestamp(now = new Date()) {
+  const p = value => String(value).padStart(2, '0')
+  return `${now.getUTCFullYear()}-${p(now.getUTCMonth() + 1)}-${p(now.getUTCDate())}_${p(now.getUTCHours())}.${p(now.getUTCMinutes())}.${p(now.getUTCSeconds())}Z`
+}
+
+/**
+ * Normalize one backup entry as stored in the settings document.
+ *
+ * @param raw - entry as it sits in settings.
+ * @param index - list position, used when the id is missing.
+ * @param providerIds - configured storage ids, so a dangling provider is caught early.
+ * @returns a normalized entry, or `undefined` when it cannot be used.
+ */
+export function normalizeBackupEntry(raw, index, providerIds = []) {
+  if (raw === null || typeof raw !== 'object') return undefined
+  const id = typeof raw.id === 'string' && /^bk-[a-z0-9]{4,16}$/i.test(raw.id) ? raw.id : makeBackupId(index)
+  const name = typeof raw.name === 'string' ? raw.name.trim() : ''
+  if (name === '') return undefined
+  const providerId = typeof raw.providerId === 'string' ? raw.providerId.trim() : ''
+  if (providerId === '') return undefined
+  const known = providerIds.length === 0 || providerIds.includes(providerId)
+  const rotation = Number.isSafeInteger(raw.rotation) && raw.rotation >= 0 ? Math.min(raw.rotation, MAX_ROTATION) : DEFAULT_ROTATION
+  const timeoutSeconds = Number.isSafeInteger(raw.timeoutSeconds) && raw.timeoutSeconds > 0 ? Math.min(raw.timeoutSeconds, MAX_TIMEOUT_SECONDS) : DEFAULT_TIMEOUT_SECONDS
+  const ignore = Array.isArray(raw.ignore)
+    ? raw.ignore.map(item => String(item).trim()).filter(item => item !== '')
+    : []
+  const credentialRefValue = typeof raw.credentialRef === 'string' && raw.credentialRef.trim() !== ''
+    ? credentialRef(raw.credentialRef.trim())
+    : makeBackupKeyRef(id)
+  return {
+    id,
+    name,
+    providerId,
+    known,
+    directory: normalizeBackupDirectory(raw.directory),
+    rotation,
+    timeoutSeconds,
+    ignore,
+    credentialRef: credentialRefValue,
+    schedule: typeof raw.schedule === 'string' ? raw.schedule.trim() : '',
+  }
+}
+
+/** A backup directory is a POSIX path inside the storage, like a base path. */
+export function normalizeBackupDirectory(value) {
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim().replaceAll('\\', '/').replace(/^\/+/, '').replace(/\/+$/, '')
+  if (trimmed === '') return ''
+  for (const segment of trimmed.split('/')) {
+    if (segment === '' || segment === '.' || segment === '..') {
+      throw new BackupError('BACKUP_BAD_DIRECTORY', `a backup directory cannot contain ${JSON.stringify(segment)}`)
+    }
+  }
+  return trimmed
+}
+
+/** Normalize a whole list, dropping entries that cannot be used. */
+export function normalizeBackupEntries(list, providerIds = []) {
+  const raw = Array.isArray(list) ? list : []
+  const entries = []
+  for (const [index, item] of raw.entries()) {
+    const entry = normalizeBackupEntry(item, index, providerIds)
+    if (entry !== undefined) entries.push(entry)
+  }
+  return entries
+}
+
+/** Section names must be a single, safe path segment. */
+export function normalizeSectionName(name) {
+  const trimmed = typeof name === 'string' ? name.trim() : ''
+  if (trimmed === '' || trimmed === '.' || trimmed === '..') {
+    throw new BackupError('BACKUP_BAD_SECTION', `a section name cannot be ${JSON.stringify(trimmed)}`)
+  }
+  if (/[/\\\0]/.test(trimmed)) {
+    throw new BackupError('BACKUP_BAD_SECTION', 'a section name must be a single path segment')
+  }
+  return trimmed
+}
+
+/**
+ * The workspace handed to `prepare-backup` participants. `section()` is the one
+ * sanctioned way to create a section: it validates the name and creates the
+ * directory synchronously, because the prepare event is dispatched synchronously.
+ */
+export class BackupWorkspace {
+  /** @param root - absolute directory that already exists. */
+  constructor(root) {
+    this.root = root
+  }
+
+  /** Create (or return) a section directory and return its absolute path. */
+  section(name) {
+    const safe = normalizeSectionName(name)
+    const dir = path.join(this.root, safe)
+    mkdirSync(dir, { recursive: true })
+    return dir
+  }
+
+  /** Absolute path of a section directory, without creating it. */
+  sectionDir(name) {
+    const safe = normalizeSectionName(name)
+    return path.join(this.root, safe)
+  }
+}
+
+/** List section names (direct subdirectories) in deterministic order. */
+export function listSections(root) {
+  return readdirSync(root, { withFileTypes: true })
+    .filter(dirent => dirent.isDirectory())
+    .map(dirent => dirent.name)
+    .sort((left, right) => left.localeCompare(right))
+}
+
+/**
+ * Whether a section name matches one of the ignore patterns. A pattern is a
+ * glob where `*` matches any run of characters; it is matched against the
+ * section directory name, not its path.
+ */
+export function isIgnoredSection(name, patterns = []) {
+  for (const raw of patterns) {
+    const pattern = String(raw).trim()
+    if (pattern === '') continue
+    const regex = new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`)
+    if (regex.test(name)) return true
+  }
+  return false
+}
+
+/** Path of a section's status.json. */
+export function sectionStatusPath(directory) {
+  return path.join(directory, 'status.json')
+}
+
+/**
+ * Atomically write a section's status.json via a temporary file + rename. The
+ * rename is atomic on the same filesystem, so a reader never sees a half file.
+ * Exported so participants use the exact primitive the host validates.
+ */
+export function atomicWriteStatus(directory, status) {
+  const target = sectionStatusPath(directory)
+  const temporary = path.join(directory, `.status.${process.pid}.${randomUUID()}.tmp`)
+  const body = { pids: [], ...status, updatedAt: new Date().toISOString() }
+  writeFileSync(temporary, JSON.stringify(body), 'utf8')
+  renameSync(temporary, target)
+  return body
+}
+
+/**
+ * Read a section's status.json.
+ *
+ * @returns `{ missing: true }`, `{ invalid: true, error, mtimeMs }`, or the
+ *   parsed object augmented with `mtimeMs` (the rewrite detection signal).
+ */
+export function readSectionStatus(directory) {
+  const target = sectionStatusPath(directory)
+  let raw
+  try {
+    raw = readFileSync(target, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { missing: true }
+    return { invalid: true, error: String(error?.message ?? error) }
+  }
+  let mtimeMs
+  let ino
+  try {
+    const info = statSync(target)
+    mtimeMs = info.mtimeMs
+    ino = info.ino
+  } catch {
+    mtimeMs = undefined
+    ino = undefined
+  }
+  try {
+    return { ...JSON.parse(raw), mtimeMs, ino }
+  } catch (error) {
+    return { invalid: true, error: String(error?.message ?? error), mtimeMs, ino }
+  }
+}
+
+/** Collect every pid recorded across the workspace's section status files. */
+export function collectPids(root) {
+  const pids = new Set()
+  for (const name of listSections(root)) {
+    const status = readSectionStatus(path.join(root, name))
+    if (Array.isArray(status?.pids)) {
+      for (const pid of status.pids) if (Number.isSafeInteger(pid) && pid > 0) pids.add(pid)
+    }
+  }
+  return [...pids]
+}
+
+/** SIGKILL every pid; pids that are already gone are ignored. */
+export function killPids(pids) {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // ESRCH means the child already exited; nothing to kill.
+    }
+  }
+}
+
+/** Create a fresh workspace directory inside the DSH tree. */
+export async function createWorkspace(home = dshHome()) {
+  const root = backupWorkspacesDir(home)
+  await mkdir(root, { recursive: true })
+  const dir = path.join(root, `workspace-${randomUUID()}`)
+  await mkdir(dir, { recursive: true })
+  return dir
+}
+
+/** Remove a workspace (or stage) directory, ignoring absence. */
+export async function removeWorkspace(dir) {
+  if (typeof dir === 'string' && dir !== '') await rm(dir, { recursive: true, force: true })
+}
+
+/** Recursively collect files and directories under `root` for the archive. */
+export function collectEntries(root) {
+  const entries = []
+  const walk = (dir, rel) => {
+    const names = readdirSync(dir, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))
+    for (const dirent of names) {
+      const absolute = path.join(dir, dirent.name)
+      const childRel = rel === '' ? dirent.name : `${rel}/${dirent.name}`
+      const info = statSync(absolute)
+      if (dirent.isDirectory()) {
+        entries.push({ rel: childRel, abs: absolute, type: '5', size: 0, mtime: info.mtimeMs })
+        walk(absolute, childRel)
+      } else if (dirent.isFile()) {
+        entries.push({ rel: childRel, abs: absolute, type: '0', size: info.size, mtime: info.mtimeMs })
+      }
+      // Symlinks and special files are skipped: a backup must not chase them.
+    }
+  }
+  walk(root, '')
+  return entries
+}
+
+/** Right-aligned octal field with a NUL terminator. */
+function octal(value, length) {
+  const text = value.toString(8)
+  if (text.length > length - 1) throw new BackupError('BACKUP_ARCHIVE', `tar field value too large: ${text}`)
+  return text.padStart(length - 1, '0') + '\0'
+}
+
+/** Split a POSIX path into ustar `name` (<=100) and `prefix` (<=155). */
+function splitUstarPath(rel) {
+  if (Buffer.byteLength(rel) <= 100) return { name: rel, prefix: '' }
+  const segments = rel.split('/')
+  let name = ''
+  let prefix = ''
+  while (segments.length > 0) {
+    const candidate = segments.pop()
+    const candidateName = candidate + (name === '' ? '' : `/${name}`)
+    if (Buffer.byteLength(candidateName) <= 100) {
+      name = candidateName
+      break
+    }
+    name = candidateName
+  }
+  prefix = segments.join('/')
+  if (Buffer.byteLength(prefix) > 155) throw new BackupError('BACKUP_ARCHIVE', `tar path too long: ${rel}`)
+  return { name, prefix }
+}
+
+/** One 512-byte ustar header for a file or directory entry. */
+export function tarHeader(entry) {
+  const { name, prefix } = splitUstarPath(entry.rel)
+  const header = Buffer.alloc(512)
+  const put = (offset, text) => header.write(text, offset, 'utf8')
+  put(0, name)
+  put(100, octal(entry.mode ?? (entry.type === '5' ? 0o755 : 0o644), 8))
+  put(108, octal(0, 8)) // uid
+  put(116, octal(0, 8)) // gid
+  put(124, octal(entry.size ?? 0, 12))
+  put(136, octal(Math.floor((entry.mtime ?? 0) / 1000), 12))
+  put(148, '        ') // chksum placeholder, filled below
+  put(156, entry.type === '5' ? '5' : '0')
+  put(157, '') // linkname empty
+  header.write('ustar\0', 257, 'utf8')
+  header.write('00', 263, 'utf8')
+  put(265, '') // uname
+  put(297, '') // gname
+  put(329, octal(0, 8)) // devmajor
+  put(337, octal(0, 8)) // devminor
+  put(345, prefix)
+  let checksum = 0
+  for (let index = 0; index < 512; index += 1) checksum += header[index]
+  const chksumText = checksum.toString(8).padStart(6, '0')
+  if (chksumText.length > 6) throw new BackupError('BACKUP_ARCHIVE', 'tar checksum overflow')
+  header.write(`${chksumText}\0 `, 148, 'utf8')
+  return header
+}
+
+/** Yield the tar byte chunks of a workspace; files are read streaming. */
+export async function* tarChunks(root) {
+  for (const entry of collectEntries(root)) {
+    yield tarHeader(entry)
+    if (entry.type === '0' && entry.size > 0) {
+      const stream = createReadStream(entry.abs)
+      for await (const chunk of stream) yield chunk
+      const remainder = entry.size % 512
+      if (remainder !== 0) yield Buffer.alloc(512 - remainder)
+    }
+  }
+  yield Buffer.alloc(1024) // two zero blocks mark the end
+}
+
+/** A Node Readable of the workspace tar. */
+export function tarWorkspace(root) {
+  return Readable.from(tarChunks(root))
+}
+
+/**
+ * Wrap a Node Readable with OpenPGP password encryption, streaming. The result
+ * is a standard OpenPGP binary message that CLI `gpg` can decrypt.
+ */
+export async function encryptStream(nodeReadable, key) {
+  const webStream = Readable.toWeb(nodeReadable)
+  const message = await openpgp.createMessage({ binary: webStream })
+  const encrypted = await openpgp.encrypt({ message, passwords: [key], format: 'binary' })
+  return Readable.fromWeb(encrypted)
+}
+
+/** File name (with optional `.gpg`) for an archive. */
+export function archiveFileName(base, encrypted) {
+  return encrypted ? `${base}.gpg` : base
+}
+
+/**
+ * Build an archive on disk, in a staging directory, from a workspace.
+ *
+ * @returns `{ archivePath, shaPath, archiveName, shaName, sha256, size }`.
+ */
+export async function buildArchive(workspace, stage, { name, key = '', now = new Date() } = {}) {
+  await mkdir(stage, { recursive: true })
+  const base = `${sanitizeBackupName(name)}_${backupTimestamp(now)}.tar`
+  const encrypted = key !== ''
+  const archiveName = archiveFileName(base, encrypted)
+  const shaName = `${archiveName}.sha256`
+  const archivePath = path.join(stage, archiveName)
+  const shaPath = path.join(stage, shaName)
+
+  const hasher = createHash('sha256')
+  const source = encrypted ? await encryptStream(tarWorkspace(workspace), key) : tarWorkspace(workspace)
+  const sink = createWriteStream(archivePath)
+  const hashing = new Transform({
+    transform(chunk, _encoding, callback) {
+      hasher.update(chunk)
+      callback(null, chunk)
+    },
+  })
+  await pipeline(source, hashing, sink)
+  const sha256 = hasher.digest('hex')
+  await writeFile(shaPath, `${sha256}  ${archiveName}\n`, 'utf8')
+  const info = statSync(archivePath)
+  return { archivePath, shaPath, archiveName, shaName, sha256, size: info.size }
+}
+
+/** Match an archive file name for a sanitized backup prefix. */
+export function archiveNamePattern(prefix) {
+  return new RegExp(`^${prefix.replace(/[.+?^${}()|[\]\\]/g, '\\$&')}_\\d{4}-\\d{2}-\\d{2}_\\d{2}\\.\\d{2}\\.\\d{2}Z\\.tar(?:\\.gpg)?$`)
+}
+
+/**
+ * Rotate old archive pairs in a storage directory. Each archive and its `.sha256`
+ * sidecar form a pair; only the `keep` newest pairs survive.
+ *
+ * @returns `{ deleted }` with the number of deleted objects.
+ */
+export async function rotateBackups(driver, directory, name, keep) {
+  const prefix = sanitizeBackupName(name)
+  const pattern = archiveNamePattern(prefix)
+  const { items } = await driver.list(directory, { limit: MAX_ROTATION + 100 })
+  const archives = items
+    .filter(item => item?.type === 'file' && pattern.test(path.posix.basename(item.key)))
+    .map(item => item.key)
+    .sort((left, right) => right.localeCompare(left))
+  let deleted = 0
+  for (const key of archives.slice(keep)) {
+    const result = await driver.delete(key).catch(() => undefined)
+    if (result?.deleted === true) deleted += 1
+    const shaKey = `${key}.sha256`
+    const shaResult = await driver.delete(shaKey).catch(() => undefined)
+    if (shaResult?.deleted === true) deleted += 1
+  }
+  return { deleted }
+}
+
+/** Classify one processed section from the evidence the event left behind. */
+export function classifySection({ name, timedOut, thrown, directory, beforeIno }) {
+  const status = readSectionStatus(directory)
+  const pids = Array.isArray(status?.pids) ? status.pids : []
+  if (timedOut) {
+    return { name, outcome: 'timeout', message: `section exceeded its timeout`, pids }
+  }
+  // A rewrite via temp file + rename replaces the inode; a receiver that did not
+  // touch status.json leaves the same inode behind, and that is the hard signal
+  // of "no status update", immune to filesystem clock granularity.
+  if (status.missing || status.ino === undefined || status.ino === beforeIno) {
+    return { name, outcome: 'no-status-update', message: 'receiver did not rewrite status.json', pids }
+  }
+  if (thrown !== undefined) {
+    return { name, outcome: 'error-status', message: String(thrown?.message ?? thrown), pids, status: status.status }
+  }
+  if (status.invalid) {
+    return { name, outcome: 'error-status', message: `status.json is invalid: ${status.error}`, pids }
+  }
+  if (status.status === 'child-failed') {
+    return { name, outcome: 'child-failure', message: status.message ?? 'a child process failed', pids, status: status.status }
+  }
+  if (status.status === 'ok') {
+    return { name, outcome: 'ok', message: status.message ?? 'ok', pids, status: status.status }
+  }
+  if (status.status === 'error') {
+    return { name, outcome: 'error-status', message: status.message ?? 'section reported an error', pids, status: status.status }
+  }
+  return { name, outcome: 'error-status', message: `section finished with unexpected status ${JSON.stringify(status.status)}`, pids, status: status.status }
+}
+
+/**
+ * Run one backup end to end. This is the vertical slice the admin "run" button
+ * and the cron tick both call.
+ *
+ * @param ctx - cordis context; must expose `emit` and `parallel`.
+ * @param entry - normalized backup entry.
+ * @param filestore - the Filestore service, for the storage driver.
+ * @param resolveSecret - resolves the encryption key credential (raw base64).
+ * @param options.logger - logger with `error`; defaults to console.
+ * @param options.now - clock for the archive timestamp.
+ * @returns `{ code, message, details }`, and `archive` on success.
+ */
+export async function runBackup(ctx, entry, filestore, resolveSecret, options = {}) {
+  const logger = options.logger ?? console
+  const now = options.now ?? (() => new Date())
+  const timeoutMs = (entry.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000
+  const workspace = await createWorkspace(options.dshHome)
+  const stage = path.join(backupStageDir(options.dshHome), `stage-${randomUUID()}`)
+  try {
+    const handle = new BackupWorkspace(workspace)
+
+    // 1. Participants create sections synchronously.
+    ctx.emit('dsh-storage/prepare-backup', handle)
+
+    // 2. Enumerate sections, drop ignored ones.
+    const details = []
+    const sections = listSections(workspace).filter(name => {
+      if (!isIgnoredSection(name, entry.ignore)) return true
+      rmSync(path.join(workspace, name), { recursive: true, force: true })
+      details.push({ name, outcome: 'ignored', message: 'ignored' })
+      return false
+    })
+
+    // 3. An empty backup is a clean no-op: no archive, no upload.
+    if (sections.length === 0) {
+      return { code: 'ok', message: 'empty backup was not uploaded', details: { sections: details, killed: [] } }
+    }
+
+    // 4. Process sections sequentially; a section's failure ends the backup.
+    for (const name of sections) {
+      const directory = path.join(workspace, name)
+      const beforeIno = readSectionStatus(directory).ino
+      const controller = new AbortController()
+      let timedOut = false
+      let thrown
+      let onTimeout
+      const timeoutPromise = new Promise(resolve => { onTimeout = resolve })
+      const timer = setTimeout(() => { timedOut = true; controller.abort(); onTimeout() }, timeoutMs)
+      try {
+        await Promise.race([ctx.parallel('dsh-storage/backup-section', { directory, section: name, signal: controller.signal }), timeoutPromise])
+      } catch (error) {
+        thrown = error
+      } finally {
+        clearTimeout(timer)
+      }
+      const classified = classifySection({ name, timedOut, thrown, directory, beforeIno })
+      details.push(classified)
+      if (classified.outcome !== 'ok') {
+        const pids = collectPids(workspace)
+        killPids(pids)
+        return {
+          code: codeForOutcome(classified.outcome),
+          message: `section ${JSON.stringify(name)} failed: ${classified.message}`,
+          details: { sections: details, killed: pids },
+        }
+      }
+    }
+
+    // 5. Archive, upload, rotate.
+    let key = ''
+    try {
+      const resolved = await resolveSecret(entry.credentialRef)
+      const value = resolved === null || resolved === undefined ? undefined : (typeof resolved === 'string' ? resolved : resolved.value)
+      if (typeof value === 'string' && value !== '') key = decodeBackupKey(value)
+    } catch {
+      key = ''
+    }
+    const built = await buildArchive(workspace, stage, { name: entry.name, key, now: now() })
+    const driver = filestore.driver(entry.providerId)
+    const dirKey = entry.directory ?? ''
+    const archiveKey = dirKey === '' ? built.archiveName : `${dirKey}/${built.archiveName}`
+    const shaKey = `${archiveKey}.sha256`
+    await driver.putFile(archiveKey, built.archivePath)
+    await driver.putFile(shaKey, built.shaPath)
+    const rotation = await rotateBackups(driver, dirKey, entry.name, entry.rotation)
+
+    return {
+      code: 'ok',
+      message: `uploaded ${built.archiveName} to ${entry.providerId}${dirKey === '' ? '' : `/${dirKey}`}, sha256 ${built.sha256.slice(0, 12)}…`,
+      details: { sections: details, killed: [], rotation },
+      archive: { name: built.archiveName, sha256: built.sha256, size: built.size, key: archiveKey, encrypted: key !== '' },
+    }
+  } catch (error) {
+    // Any unexpected failure: kill children, report a structured error.
+    const pids = collectPids(workspace).filter(pid => pid !== process.pid)
+    killPids(pids)
+    const mapped = error instanceof BackupError ? error : new BackupError('BACKUP_FAILED', String(error?.message ?? error))
+    logger.error?.(`[dsh-storage] backup ${entry.name} failed: ${mapped.code} ${mapped.message}`)
+    return {
+      code: mapped.code,
+      message: mapped.message,
+      details: { sections: [], killed: pids },
+    }
+  } finally {
+    await removeWorkspace(workspace)
+    await removeWorkspace(stage)
+  }
+}

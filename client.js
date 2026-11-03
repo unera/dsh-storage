@@ -24,6 +24,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // client/index.jsx
 var index_exports = {};
 __export(index_exports, {
+  BackupPage: () => BackupPage,
   StoragePage: () => StoragePage,
   apply: () => apply,
   inject: () => inject
@@ -102,7 +103,34 @@ var DICTIONARIES = {
     "neverChecked": "not checked yet",
     "confirmRemove": "Delete this storage? Files stay where they are; only the entry goes away.",
     "saved": "saved",
-    "failed": "failed"
+    "failed": "failed",
+    "backup.nav.title": "Backups",
+    "backup.intro": "Encrypted tar archives of backup sections, uploaded to one of the configured storages. A section is a directory created by a participant during prepare; ignored sections are dropped before archiving.",
+    "backup.empty": "No backups yet. Add one below.",
+    "backup.add": "Add backup",
+    "backup.edit": "Edit",
+    "backup.name": "Name",
+    "backup.namePlaceholder": "daily",
+    "backup.provider": "Storage",
+    "backup.directory": "Folder",
+    "backup.directoryHint": "POSIX path inside the storage; empty means the storage root.",
+    "backup.rotation": "Rotation",
+    "backup.rotationHint": "how many archive pairs to keep",
+    "backup.timeout": "Section timeout (s)",
+    "backup.timeoutHint": "per-section deadline; default 300.",
+    "backup.schedule": "Schedule (cron)",
+    "backup.scheduleHint": "five fields: minute hour day month weekday. Empty disables the schedule.",
+    "backup.ignore": "Ignore sections",
+    "backup.ignoreHint": "one glob per line, matched against the section name; * matches anything.",
+    "backup.key": "Encryption key",
+    "backup.keyHint": "Passphrase for the OpenPGP archive; empty means no encryption.",
+    "backup.keyKeep": "leave empty to keep the current key",
+    "backup.keySet": "encryption key set",
+    "backup.run": "Run now",
+    "backup.running": "running\u2026",
+    "backup.remove": "Delete",
+    "backup.confirmRemove": "Delete this backup? Uploaded archives stay where they are; only the entry goes away.",
+    "backup.ok": "Backup done"
   },
   ru: {
     "nav.title": "\u0425\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430",
@@ -171,7 +199,34 @@ var DICTIONARIES = {
     "neverChecked": "\u0435\u0449\u0451 \u043D\u0435 \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u043B\u043E\u0441\u044C",
     "confirmRemove": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435? \u0424\u0430\u0439\u043B\u044B \u043E\u0441\u0442\u0430\u043D\u0443\u0442\u0441\u044F \u043D\u0430 \u043C\u0435\u0441\u0442\u0435, \u0438\u0441\u0447\u0435\u0437\u043D\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0437\u0430\u043F\u0438\u0441\u044C.",
     "saved": "\u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E",
-    "failed": "\u043E\u0448\u0438\u0431\u043A\u0430"
+    "failed": "\u043E\u0448\u0438\u0431\u043A\u0430",
+    "backup.nav.title": "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u044B\u0435 \u043A\u043E\u043F\u0438\u0438",
+    "backup.intro": "\u0428\u0438\u0444\u0440\u043E\u0432\u0430\u043D\u043D\u044B\u0435 tar-\u0430\u0440\u0445\u0438\u0432\u044B \u0438\u0437 \u0441\u0435\u043A\u0446\u0438\u0439 \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u043E\u0433\u043E \u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u044F, \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u044E\u0442\u0441\u044F \u0432 \u043E\u0434\u043D\u043E \u0438\u0437 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D\u043D\u044B\u0445 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449. \u0421\u0435\u043A\u0446\u0438\u044F \u2014 \u043A\u0430\u0442\u0430\u043B\u043E\u0433, \u0441\u043E\u0437\u0434\u0430\u043D\u043D\u044B\u0439 \u0443\u0447\u0430\u0441\u0442\u043D\u0438\u043A\u043E\u043C \u043D\u0430 \u044D\u0442\u0430\u043F\u0435 prepare; \u0438\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u043C\u044B\u0435 \u0441\u0435\u043A\u0446\u0438\u0438 \u0443\u0434\u0430\u043B\u044F\u044E\u0442\u0441\u044F \u0434\u043E \u0430\u0440\u0445\u0438\u0432\u0430\u0446\u0438\u0438.",
+    "backup.empty": "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u044B\u0445 \u043A\u043E\u043F\u0438\u0439 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442. \u0414\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u043D\u0438\u0436\u0435.",
+    "backup.add": "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u0443\u044E \u043A\u043E\u043F\u0438\u044E",
+    "backup.edit": "\u0418\u0437\u043C\u0435\u043D\u0438\u0442\u044C",
+    "backup.name": "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435",
+    "backup.namePlaceholder": "\u0435\u0436\u0435\u0434\u043D\u0435\u0432\u043D\u0430\u044F",
+    "backup.provider": "\u0425\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435",
+    "backup.directory": "\u041A\u0430\u0442\u0430\u043B\u043E\u0433",
+    "backup.directoryHint": "POSIX-\u043F\u0443\u0442\u044C \u0432\u043D\u0443\u0442\u0440\u0438 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430; \u043F\u0443\u0441\u0442\u043E \u2014 \u043A\u043E\u0440\u0435\u043D\u044C \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430.",
+    "backup.rotation": "\u0420\u043E\u0442\u0430\u0446\u0438\u044F",
+    "backup.rotationHint": "\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043F\u0430\u0440 \u0430\u0440\u0445\u0438\u0432\u043E\u0432 \u0445\u0440\u0430\u043D\u0438\u0442\u044C",
+    "backup.timeout": "\u0422\u0430\u0439\u043C\u0430\u0443\u0442 \u0441\u0435\u043A\u0446\u0438\u0438 (\u0441)",
+    "backup.timeoutHint": "\u043F\u0440\u0435\u0434\u0435\u043B \u043D\u0430 \u043E\u0434\u043D\u0443 \u0441\u0435\u043A\u0446\u0438\u044E; \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E 300.",
+    "backup.schedule": "\u0420\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 (cron)",
+    "backup.scheduleHint": "\u043F\u044F\u0442\u044C \u043F\u043E\u043B\u0435\u0439: \u043C\u0438\u043D\u0443\u0442\u0430 \u0447\u0430\u0441 \u0434\u0435\u043D\u044C \u043C\u0435\u0441\u044F\u0446 \u0434\u0435\u043D\u044C-\u043D\u0435\u0434\u0435\u043B\u0438. \u041F\u0443\u0441\u0442\u043E \u2014 \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u043E.",
+    "backup.ignore": "\u0418\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u043C\u044B\u0435 \u0441\u0435\u043A\u0446\u0438\u0438",
+    "backup.ignoreHint": "\u043F\u043E \u043E\u0434\u043D\u043E\u043C\u0443 \u0433\u043B\u043E\u0431\u0443 \u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0443, \u0441\u0440\u0430\u0432\u043D\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0441 \u0438\u043C\u0435\u043D\u0435\u043C \u0441\u0435\u043A\u0446\u0438\u0438; * \u2014 \u0447\u0442\u043E \u0443\u0433\u043E\u0434\u043D\u043E.",
+    "backup.key": "\u041A\u043B\u044E\u0447 \u0448\u0438\u0444\u0440\u043E\u0432\u0430\u043D\u0438\u044F",
+    "backup.keyHint": "\u041F\u0430\u0440\u043E\u043B\u044C \u0434\u043B\u044F OpenPGP-\u0430\u0440\u0445\u0438\u0432\u0430; \u043F\u0443\u0441\u0442\u043E \u2014 \u0431\u0435\u0437 \u0448\u0438\u0444\u0440\u043E\u0432\u0430\u043D\u0438\u044F.",
+    "backup.keyKeep": "\u043E\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u043F\u0443\u0441\u0442\u044B\u043C, \u0447\u0442\u043E\u0431\u044B \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043A\u043B\u044E\u0447",
+    "backup.keySet": "\u043A\u043B\u044E\u0447 \u0448\u0438\u0444\u0440\u043E\u0432\u0430\u043D\u0438\u044F \u0437\u0430\u0434\u0430\u043D",
+    "backup.run": "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C",
+    "backup.running": "\u0432\u044B\u043F\u043E\u043B\u043D\u044F\u0435\u0442\u0441\u044F\u2026",
+    "backup.remove": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C",
+    "backup.confirmRemove": "\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u0443\u044E \u043A\u043E\u043F\u0438\u044E? \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u043D\u044B\u0435 \u0430\u0440\u0445\u0438\u0432\u044B \u043E\u0441\u0442\u0430\u043D\u0443\u0442\u0441\u044F \u043D\u0430 \u043C\u0435\u0441\u0442\u0435, \u0438\u0441\u0447\u0435\u0437\u043D\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0437\u0430\u043F\u0438\u0441\u044C.",
+    "backup.ok": "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u043A\u043E\u043F\u0438\u044F \u0441\u043E\u0437\u0434\u0430\u043D\u0430"
   }
 };
 
@@ -756,6 +811,232 @@ function StoragePage(props) {
     ] })
   ] });
 }
+var BACKUP_SECTION_ID = "backup";
+function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, running }) {
+  const provider = providers.find((item) => item.id === backup.providerId);
+  return (0, import_jsx_runtime.jsx)("tr", {
+    children: [
+      (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: [
+        (0, import_jsx_runtime.jsx)("strong", { children: backup.name }),
+        (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: `${provider?.label ?? backup.providerId} \xB7 ${backup.id}` }),
+        backup.directory === "" ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: backup.directory })
+      ] }),
+      (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: (0, import_jsx_runtime.jsx)("div", { style: styles.badges, children: [
+        (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("backup.rotationHint"), children: `\u21BB ${backup.rotation}` }),
+        backup.keyConfigured ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillOk, hint: t("backup.keySet"), children: "\u{1F511}" }) : null,
+        backup.schedule === "" ? null : (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillFree, hint: t("backup.schedule"), children: backup.schedule })
+      ] }) }),
+      (0, import_jsx_runtime.jsx)("td", { style: { ...styles.td, whiteSpace: "nowrap", verticalAlign: "top" }, children: (0, import_jsx_runtime.jsx)("div", { style: styles.buttonColumn, children: [
+        running ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("backup.running"), children: (0, import_jsx_runtime.jsx)("span", { style: styles.spinner }) }) : (0, import_jsx_runtime.jsx)(IconButton, { icon: "test", title: t("backup.run"), disabled: busy, onClick: () => onRun(backup.id) }),
+        (0, import_jsx_runtime.jsx)(IconButton, { icon: "edit", title: t("backup.edit"), disabled: busy, onClick: () => onEdit(backup.id) }),
+        (0, import_jsx_runtime.jsx)(IconButton, { icon: "remove", title: t("backup.remove"), disabled: busy, onClick: () => onRemove(backup.id) })
+      ] }) })
+    ]
+  });
+}
+function BackupForm({ providers, t, initial, onCancel, onSaved }) {
+  const [name, setName] = (0, import_react.useState)(initial?.name ?? "");
+  const [providerId, setProviderId] = (0, import_react.useState)(initial?.providerId ?? providers[0]?.id ?? "");
+  const [directory, setDirectory] = (0, import_react.useState)(initial?.directory ?? "");
+  const [rotation, setRotation] = (0, import_react.useState)(String(initial?.rotation ?? 10));
+  const [timeoutSeconds, setTimeoutSeconds] = (0, import_react.useState)(String(initial?.timeoutSeconds ?? 300));
+  const [ignore, setIgnore] = (0, import_react.useState)((initial?.ignore ?? []).join("\n"));
+  const [key, setKey] = (0, import_react.useState)("");
+  const [schedule, setSchedule] = (0, import_react.useState)(initial?.schedule ?? "");
+  const [error, setError] = (0, import_react.useState)(null);
+  const [busy, setBusy] = (0, import_react.useState)(false);
+  const editing = initial !== void 0;
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await request("/backups/save", {
+        method: "POST",
+        body: {
+          ...editing ? { id: initial.id } : {},
+          name: name.trim(),
+          providerId,
+          directory: directory.trim(),
+          rotation: Number(rotation) || 10,
+          timeoutSeconds: Number(timeoutSeconds) || 300,
+          ignore: ignore.split("\n").map((item) => item.trim()).filter((item) => item !== ""),
+          schedule: schedule.trim(),
+          ...key.trim() === "" ? {} : { key }
+        }
+      });
+      await onSaved();
+    } catch (problem) {
+      setError(problem.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (0, import_jsx_runtime.jsx)("div", { style: styles.form, children: [
+    (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
+      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+        (0, import_jsx_runtime.jsx)("span", { children: t("backup.name") }),
+        (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: name, placeholder: t("backup.namePlaceholder"), onChange: (event) => setName(event.target.value) })
+      ] }),
+      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+        (0, import_jsx_runtime.jsx)("span", { children: t("backup.provider") }),
+        (0, import_jsx_runtime.jsx)("select", { style: styles.input, value: providerId, onChange: (event) => setProviderId(event.target.value), children: providers.map((item) => (0, import_jsx_runtime.jsx)("option", { value: item.id, children: item.label }, item.id)) })
+      ] }),
+      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+        (0, import_jsx_runtime.jsx)("span", { children: t("backup.directory") }),
+        (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: directory, placeholder: "backups", onChange: (event) => setDirectory(event.target.value) }),
+        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.directoryHint") })
+      ] })
+    ] }),
+    (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
+      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+        (0, import_jsx_runtime.jsx)("span", { children: t("backup.rotation") }),
+        (0, import_jsx_runtime.jsx)("input", { style: styles.input, type: "number", min: 0, value: rotation, onChange: (event) => setRotation(event.target.value) })
+      ] }),
+      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+        (0, import_jsx_runtime.jsx)("span", { children: t("backup.timeout") }),
+        (0, import_jsx_runtime.jsx)("input", { style: styles.input, type: "number", min: 1, value: timeoutSeconds, onChange: (event) => setTimeoutSeconds(event.target.value) }),
+        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.timeoutHint") })
+      ] }),
+      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+        (0, import_jsx_runtime.jsx)("span", { children: t("backup.schedule") }),
+        (0, import_jsx_runtime.jsx)("input", { style: styles.input, value: schedule, placeholder: "0 3 * * *", onChange: (event) => setSchedule(event.target.value) }),
+        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.scheduleHint") })
+      ] })
+    ] }),
+    (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+      (0, import_jsx_runtime.jsx)("span", { children: t("backup.ignore") }),
+      (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 52 }, value: ignore, placeholder: "logs\nnode_modules", onChange: (event) => setIgnore(event.target.value) }),
+      (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.ignoreHint") })
+    ] }),
+    (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, marginTop: 8 }, children: [
+      (0, import_jsx_runtime.jsx)("span", { children: t("backup.key") }),
+      (0, import_jsx_runtime.jsx)(LineField, { value: key, onChange: setKey }),
+      (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: editing ? t("backup.keyKeep") : t("backup.keyHint") })
+    ] }),
+    error === null ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.error, children: error }),
+    (0, import_jsx_runtime.jsx)("div", { style: { marginTop: 12, display: "flex", gap: 8 }, children: [
+      (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: submit, children: [
+        (0, import_jsx_runtime.jsx)("img", { src: ICONS.save, alt: "", style: { ...styles.icon, display: "inline-block", verticalAlign: "-3px", marginRight: 6 } }),
+        t("save")
+      ] }),
+      (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy, onClick: onCancel, children: [
+        (0, import_jsx_runtime.jsx)("img", { src: ICONS.cancel, alt: "", style: { ...styles.icon, display: "inline-block", verticalAlign: "-3px", marginRight: 6 } }),
+        t("cancel")
+      ] })
+    ] })
+  ] });
+}
+function BackupPage(props) {
+  const t = typeof props?.t === "function" ? props.t : (key) => key;
+  const [backups, setBackups] = (0, import_react.useState)([]);
+  const [providers, setProviders] = (0, import_react.useState)([]);
+  const [loading, setLoading] = (0, import_react.useState)(true);
+  const [busy, setBusy] = (0, import_react.useState)(false);
+  const [error, setError] = (0, import_react.useState)(null);
+  const [adding, setAdding] = (0, import_react.useState)(false);
+  const [editingId, setEditingId] = (0, import_react.useState)(null);
+  const [runningId, setRunningId] = (0, import_react.useState)(null);
+  const [result, setResult] = (0, import_react.useState)(null);
+  const fetchOnce = async () => {
+    const body = await request("/backups");
+    const next = Array.isArray(body.backups) ? body.backups : [];
+    if (Array.isArray(body.providers)) setProviders(body.providers);
+    setBackups(next);
+    return next;
+  };
+  const load = async () => {
+    setError(null);
+    try {
+      await fetchOnce();
+    } catch (problem) {
+      setError(problem.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  (0, import_react.useEffect)(() => {
+    load();
+  }, []);
+  const run = async (id) => {
+    setRunningId(id);
+    setResult(null);
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await request("/backups/run", { method: "POST", body: { id } }));
+    } catch (problem) {
+      setError(problem.message);
+    } finally {
+      setBusy(false);
+      setRunningId(null);
+    }
+  };
+  const remove = async (id) => {
+    if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(t("backup.confirmRemove"))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await request("/backups/delete", { method: "POST", body: { id } });
+      await load();
+    } catch (problem) {
+      setError(problem.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const form = adding ? { key: "new" } : editingId === null ? null : (() => {
+    const backup = backups.find((item) => item.id === editingId);
+    return backup === void 0 ? null : { key: backup.id, initial: { ...backup } };
+  })();
+  return (0, import_jsx_runtime.jsx)("div", { children: [
+    (0, import_jsx_runtime.jsx)("p", { style: styles.intro, children: t("backup.intro") }),
+    loading ? (0, import_jsx_runtime.jsx)("p", { style: styles.hint, children: t("loading") }) : null,
+    error === null ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.error, children: error }),
+    result === null ? null : (0, import_jsx_runtime.jsx)("div", { style: { ...styles.form, marginTop: 0 }, children: [
+      (0, import_jsx_runtime.jsx)("strong", { children: result.code === "ok" ? t("backup.ok") : t("backup.failed") }),
+      (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: result.message })
+    ] }),
+    form === null ? (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy || loading, onClick: () => {
+      setAdding(true);
+      setEditingId(null);
+    }, children: t("backup.add") }) : (0, import_jsx_runtime.jsx)(BackupForm, {
+      key: form.key,
+      providers,
+      t,
+      initial: form.initial,
+      onCancel: () => {
+        setAdding(false);
+        setEditingId(null);
+      },
+      onSaved: async () => {
+        setAdding(false);
+        setEditingId(null);
+        await load();
+      }
+    }),
+    backups.length === 0 && !loading ? (0, import_jsx_runtime.jsx)("p", { style: styles.hint, children: t("backup.empty") }) : null,
+    backups.length === 0 ? null : (0, import_jsx_runtime.jsx)("table", { style: styles.table, children: [
+      (0, import_jsx_runtime.jsx)("thead", { children: (0, import_jsx_runtime.jsx)("tr", { children: [
+        (0, import_jsx_runtime.jsx)("th", { style: { ...styles.th, width: "100%" }, children: t("backup.name") }),
+        (0, import_jsx_runtime.jsx)("th", { style: { ...styles.th, whiteSpace: "nowrap" }, children: "" }),
+        (0, import_jsx_runtime.jsx)("th", { style: { ...styles.th, whiteSpace: "nowrap" }, children: "" })
+      ] }) }),
+      (0, import_jsx_runtime.jsx)("tbody", { children: backups.map((backup) => (0, import_jsx_runtime.jsx)(BackupRow, {
+        backup,
+        providers,
+        t,
+        busy,
+        running: runningId === backup.id,
+        onRun: run,
+        onEdit: (id) => {
+          setEditingId(id);
+          setAdding(false);
+        },
+        onRemove: remove
+      }, backup.id)) })
+    ] })
+  ] });
+}
 function apply(ctx) {
   let t = (key) => key;
   try {
@@ -793,6 +1074,13 @@ function apply(ctx) {
     locale: NS,
     label: () => t("nav.title")
   }, StoragePage));
+  ctx.slots.inject("settings.section", () => ctx.slots.register({
+    name: "settings.section",
+    id: BACKUP_SECTION_ID,
+    order: 37,
+    locale: NS,
+    label: () => t("backup.nav.title")
+  }, BackupPage));
 }
 var inject = ["slots", "locale"];
 

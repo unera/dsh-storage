@@ -1,12 +1,13 @@
 {
   "name": "@dr-co/dsh-storage",
   "version": "0.1.11",
-  "description": "Remote disks for DeepSeek Harness: cloud storages a model can read and write, plus backups on top of them later",
+  "description": "Remote disks for DeepSeek Harness: cloud storages a model can read and write, plus encrypted backups on top of them",
   "type": "module",
   "main": "./index.mjs",
   "exports": {
     ".": "./index.mjs",
     "./s3": "./s3.mjs",
+    "./backup": "./backup.mjs",
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
@@ -15,6 +16,7 @@
     "s3.mjs",
     "webdav.mjs",
     "yadisk.mjs",
+    "backup.mjs",
     "client.js",
     "cordis.patch.yml",
     "README.md",
@@ -53,5 +55,8 @@
     "@deepseek-ai/dsh-tools": "^0.2.1-rc.4",
     "@deepseek-ai/schemastery": "~3.18.5",
     "esbuild": "^0.28.2"
+  },
+  "dependencies": {
+    "openpgp": "^6.3.2"
   }
 }
