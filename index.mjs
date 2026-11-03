@@ -1101,7 +1101,7 @@ async function readBody(request) {
  * @param credentialsOf - getter for the credentials service, which may mount late.
  * @returns an HTTP handler.
  */
-export function createFilestoreHandler(settings, filestore, credentialsOf = () => null, ctx = undefined) {
+export function createFilestoreHandler(settings, filestore, credentialsOf = () => null, ctx = undefined, guard = undefined) {
   const read = () => {
     const descriptor = settings.describe().find(entry => String(entry.ns) === SETTINGS_NAMESPACE)
     const value = descriptor?.value
@@ -1120,6 +1120,13 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
 
   return async (request, response) => {
     try {
+      // The host's own API is token-guarded; a plugin prefix is not, so ask the
+      // connection service the same question it asks about /api/*: is this a
+      // browser with a signed session, or an API client with a bearer token?
+      const rejection = typeof guard === 'function' ? guard(request) : undefined
+      if (rejection !== undefined) {
+        return json(response, rejection, { error: 'нужна авторизация DSH', code: 'FILESTORE_UNAUTHORIZED' })
+      }
       const url = new URL(request.url ?? '/', 'http://localhost')
       const suffix = url.pathname.startsWith(ROUTE_PREFIX) ? url.pathname.slice(ROUTE_PREFIX.length) || '/' : url.pathname
       const parts = suffix.split('/').filter(part => part !== '')
@@ -1550,11 +1557,15 @@ export function apply(ctx, config = {}) {
     })
   })
 
-  ctx.inject(['settings', 'webServer'], child => {
+  ctx.inject(['settings', 'webServer', 'connection'], child => {
     const settings = child.settings
     const server = child.webServer
+    const connection = child.connection
     if (typeof settings?.update !== 'function' || typeof server?.register !== 'function') return undefined
-    const handler = createFilestoreHandler(settings, filestore, () => shared.credentials, child)
+    const guard = typeof connection?.requestRejection === 'function'
+      ? request => connection.requestRejection(request)
+      : undefined
+    const handler = createFilestoreHandler(settings, filestore, () => shared.credentials, child, guard)
     return child.effect(() => {
       const unregister = server.register({ kind: 'prefix', path: ROUTE_PREFIX, handler })
       return () => { try { unregister?.() } catch { /* already gone */ } }

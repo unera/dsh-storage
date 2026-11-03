@@ -15,6 +15,9 @@ async function boot(providers) {
     update: async (ns, value) => { record.document = { ...record.document, ...value } },
   })
   ctx.provide('webServer', { register: route => { record.routes.push(route); return () => {} } })
+  // The real host asks this service whether a request carries a signed session;
+  // the stub says yes, a separate test drives the refusal.
+  ctx.provide('connection', { requestRejection: () => undefined })
   ctx.provide('credentials', {
     resolve: async ref => (record.stored.has(String(ref)) ? { value: record.stored.get(String(ref)), source: 'file' } : undefined),
     set: async (ref, value) => { record.stored.set(String(ref), value) },

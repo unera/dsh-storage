@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools, nextEntryId } from '../index.mjs'
+import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools, nextEntryId, createFilestoreHandler } from '../index.mjs'
 
 /**
  * Boot the plugin for real: a genuine cordis Context with the services it injects
@@ -28,6 +28,9 @@ async function boot({ providers = [], resolveValue = undefined, failWrites = fal
     },
   })
   ctx.provide('webServer', { register: route => { record.routes.push(route); return () => {} } })
+  // The real host asks this service whether a request carries a signed session;
+  // the stub says yes, a separate test drives the refusal.
+  ctx.provide('connection', { requestRejection: () => undefined })
   ctx.provide('credentials', {
     resolve: async () => resolveValue,
     set: async () => {},
@@ -248,4 +251,24 @@ test('an id is never reused after a deletion', () => {
   assert.equal(tools.length, 7)
   assert.equal(nextEntryId([{ id: 'st-0001' }, { id: 'st-0003' }]), 'st-0002')
   assert.equal(nextEntryId([]), 'st-0001')
+})
+
+test('the admin API refuses a request the host does not recognise', async () => {
+  const { ctx, record } = await boot({ providers: [] })
+  try {
+    // Stand in for `ctx.connection.requestRejection`: a request with no signed
+    // session must not reach the handler at all.
+    const guarded = createFilestoreHandler(
+      { describe: () => [{ ns: SETTINGS_NAMESPACE, value: { providers: [] } }], update: async () => {} },
+      { entries: () => [], status: () => ({}), test: async () => ({}) },
+      () => null,
+      undefined,
+      () => 401,
+    )
+    const response = await call(guarded, { url: '/__fs/providers' })
+    assert.equal(response.status, 401)
+    assert.equal(response.body.code, 'FILESTORE_UNAUTHORIZED')
+  } finally {
+    await ctx.stop?.()
+  }
 })
