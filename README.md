@@ -21,7 +21,7 @@ from and write to, and later the same storages carry full backups.
 - настройки в namespace `dsh-storage` и админ-API `/__fs`.
 
 Чего нет: OAuth-провайдеров
-(Google, Яндекс.Диск, Dropbox), `rclone`, `sftp`. Всё это — следующие коммиты,
+(Google), `rclone`, `sftp`. Всё это — следующие коммиты,
 по плану из спеки.
 
 ## S3

@@ -21,8 +21,8 @@ test('an entry gets defaults and keeps its id', () => {
 })
 
 test('an unknown type is dropped instead of carried around', () => {
-  assert.equal(normalizeEntry({ type: 'dropbox' }, 0), undefined)
-  assert.deepEqual(normalizeEntries([{ type: 'dropbox' }, { type: 'local', id: 'st-0002' }]).entries.map(entry => entry.id), ['st-0002'])
+  assert.equal(normalizeEntry({ type: 'not-a-provider' }, 0), undefined)
+  assert.deepEqual(normalizeEntries([{ type: 'not-a-provider' }, { type: 'local', id: 'st-0002' }]).entries.map(entry => entry.id), ['st-0002'])
 })
 
 test('only the first primary keeps the flag', () => {
