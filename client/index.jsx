@@ -181,7 +181,7 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
           provider.options?.bucket === undefined ? null : jsx('div', { style: styles.hint, children: `${provider.options.bucket}${provider.options.endpoint === undefined ? '' : ` · ${provider.options.endpoint}`}` }),
         ] }),
       ] }) }),
-      jsx('td', { style: styles.td, children: jsx('div', { style: styles.badges, children: [
+      jsx('td', { style: { ...styles.td, minWidth: 150, verticalAlign: 'top' }, children: jsx('div', { style: styles.badges, children: [
         // While a check runs the pill becomes a spinner: a still "?" cannot tell
         // "not checked yet" from "being checked right now".
         checking
@@ -672,9 +672,8 @@ export function StoragePage(props) {
 const BACKUP_SECTION_ID = 'backup'
 
 /** One backup row. */
-function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, onRefresh, busy, running, refreshing }) {
+function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, running }) {
   const provider = providers.find(item => item.id === backup.providerId)
-  const sectionCount = Array.isArray(backup.sections) ? backup.sections.length : 0
   return jsx('tr', {
     children: [
       jsx('td', { style: styles.td, children: [
@@ -684,7 +683,6 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, onRefresh, b
       ] }),
       jsx('td', { style: styles.td, children: jsx('div', { style: styles.badges, children: [
         jsx(Pill, { tone: styles.pillGrey, hint: t('backup.rotationHint'), children: `↻ ${backup.rotation}` }),
-        jsx(Pill, { tone: styles.pillGrey, hint: t('backup.sectionsHint'), children: `${t('backup.sections')}: ${sectionCount}` }),
         backup.keyConfigured ? jsx(Pill, { tone: styles.pillOk, hint: t('backup.keySet'), children: '🔑' }) : null,
         backup.schedule === '' ? null : jsx(Pill, { tone: styles.pillFree, hint: t('backup.schedule'), children: backup.schedule }),
       ] }) }),
@@ -692,9 +690,6 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, onRefresh, b
         running
           ? jsx(Pill, { tone: styles.pillGrey, hint: t('backup.running'), children: jsx('span', { style: styles.spinner }) })
           : jsx(IconButton, { icon: 'test', title: t('backup.run'), disabled: busy, onClick: () => onRun(backup.id) }),
-        refreshing
-          ? jsx(Pill, { tone: styles.pillGrey, hint: t('backup.refreshing'), children: jsx('span', { style: styles.spinner }) })
-          : jsx(IconButton, { icon: 'test', title: t('backup.refreshSections'), disabled: busy, onClick: () => onRefresh(backup.id) }),
         jsx(IconButton, { icon: 'edit', title: t('backup.edit'), disabled: busy, onClick: () => onEdit(backup.id) }),
         jsx(IconButton, { icon: 'remove', title: t('backup.remove'), disabled: busy, onClick: () => onRemove(backup.id) }),
       ] }) }),
@@ -702,8 +697,8 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, onRefresh, b
   })
 }
 
-/** The backup form: name, provider, directory, rotation, timeout, ignore, key. */
-function BackupForm({ providers, t, initial, onCancel, onSaved }) {
+/** The backup form: name, provider, directory, rotation, timeout, globs, key. */
+function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSections }) {
   const [name, setName] = useState(initial?.name ?? '')
   const [providerId, setProviderId] = useState(initial?.providerId ?? providers[0]?.id ?? '')
   const [directory, setDirectory] = useState(initial?.directory ?? '')
@@ -711,11 +706,27 @@ function BackupForm({ providers, t, initial, onCancel, onSaved }) {
   const [timeoutSeconds, setTimeoutSeconds] = useState(String(initial?.timeoutSeconds ?? 300))
   const [ignore, setIgnore] = useState((initial?.ignore ?? []).join('\n'))
   const [include, setInclude] = useState((initial?.include ?? []).join('\n'))
+  const [sections, setSections] = useState(initial?.sections ?? [])
   const [key, setKey] = useState('')
   const [schedule, setSchedule] = useState(initial?.schedule ?? '')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const editing = initial !== undefined
+
+  const doRefreshSections = async () => {
+    if (!editing || refreshing) return
+    setRefreshing(true)
+    setError(null)
+    try {
+      const found = await onRefreshSections?.(initial.id)
+      setSections(Array.isArray(found) ? found : [])
+    } catch (problem) {
+      setError(problem.message)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const submit = async () => {
     setBusy(true)
@@ -779,13 +790,32 @@ function BackupForm({ providers, t, initial, onCancel, onSaved }) {
     jsx('div', { style: styles.row, children: [
       jsx('label', { style: styles.field, children: [
         jsx('span', { children: t('backup.ignore') }),
-        jsx('textarea', { style: { ...styles.input, minHeight: 52 }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
+        jsx('textarea', { style: { ...styles.input, minHeight: 64 }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
         jsx('span', { style: styles.hint, children: t('backup.ignoreHint') }),
       ] }),
       jsx('label', { style: styles.field, children: [
         jsx('span', { children: t('backup.include') }),
-        jsx('textarea', { style: { ...styles.input, minHeight: 52 }, value: include, placeholder: 'db\n*', onChange: event => setInclude(event.target.value) }),
+        jsx('textarea', { style: { ...styles.input, minHeight: 64 }, value: include, placeholder: 'db\n*', onChange: event => setInclude(event.target.value) }),
         jsx('span', { style: styles.hint, children: t('backup.includeHint') }),
+      ] }),
+      jsx('div', { style: styles.field, children: [
+        jsx('div', { style: { display: 'flex', alignItems: 'center', gap: 8 }, children: [
+          jsx('span', { children: t('backup.found') }),
+          jsx('button', {
+            style: { ...styles.pill, ...styles.pillGrey, cursor: editing && !refreshing ? 'pointer' : 'default', border: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 },
+            title: t('backup.refreshSections'),
+            disabled: !editing || refreshing,
+            onClick: doRefreshSections,
+            children: refreshing
+              ? jsx('span', { style: styles.spinner })
+              : `${t('backup.sections')}: ${sections.length}`,
+          }),
+        ] }),
+        jsx('div', { style: { ...styles.input, minHeight: 64, overflowY: 'auto', background: 'rgba(128,128,128,0.08)' }, children:
+          sections.length === 0
+            ? jsx('div', { style: styles.hint, children: editing ? t('backup.foundEmpty') : t('backup.saveFirst') })
+            : sections.map(name => jsx('div', { key: name, style: { fontSize: 12, lineHeight: 1.5 } }, name)),
+        }),
       ] }),
     ] }),
     jsx('label', { style: { ...styles.field, marginTop: 8 }, children: [
@@ -818,7 +848,6 @@ export function BackupPage(props) {
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [runningId, setRunningId] = useState(null)
-  const [refreshingId, setRefreshingId] = useState(null)
   const [result, setResult] = useState(null)
 
   const fetchOnce = async () => {
@@ -871,19 +900,9 @@ export function BackupPage(props) {
     }
   }
 
-  const refresh = async id => {
-    setRefreshingId(id)
-    setBusy(true)
-    setError(null)
-    try {
-      await request('/backups/sections', { method: 'POST', body: { id } })
-      await load()
-    } catch (problem) {
-      setError(problem.message)
-    } finally {
-      setBusy(false)
-      setRefreshingId(null)
-    }
+  const refreshSections = async id => {
+    const body = await request('/backups/sections', { method: 'POST', body: { id } })
+    return Array.isArray(body.sections) ? body.sections : []
   }
 
   const form = adding
@@ -910,6 +929,7 @@ export function BackupPage(props) {
         providers,
         t,
         initial: form.initial,
+        onRefreshSections: refreshSections,
         onCancel: () => { setAdding(false); setEditingId(null) },
         onSaved: async () => { setAdding(false); setEditingId(null); await load() },
       }),
@@ -929,9 +949,7 @@ export function BackupPage(props) {
         t,
         busy,
         running: runningId === backup.id,
-        refreshing: refreshingId === backup.id,
         onRun: run,
-        onRefresh: refresh,
         onEdit: id => { setEditingId(id); setAdding(false) },
         onRemove: remove,
       }, backup.id)) }),
