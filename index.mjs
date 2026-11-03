@@ -864,6 +864,65 @@ export const oauthTransport = { fetch: (...args) => fetch(...args) }
 export const deviceStates = new Map()
 
 /**
+ * Exchange the device code for a token once.
+ *
+ * @param record - the stored handshake.
+ * @param store - credentials service.
+ * @returns `{ status: 'pending' | 'ok' | 'error' | 'expired', error? }`.
+ */
+export async function exchangeDeviceCode(record, store) {
+  if (Date.now() > record.expiresAt) return { status: 'expired' }
+  const form = new URLSearchParams({ grant_type: 'device_code', code: record.deviceCode, client_id: record.clientId })
+  if (typeof store?.resolve === 'function') {
+    const secret = await store.resolve(makeCredentialRef(`${record.entryId}-client`)).catch(() => undefined)
+    const value = secret?.value ?? (typeof secret === 'string' ? secret : undefined)
+    if (typeof value === 'string' && value !== '') form.set('client_secret', value)
+  }
+  const answer = await oauthTransport.fetch(record.tokenUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: form,
+  })
+  const body = await answer.json().catch(() => ({}))
+  if (body?.error === 'authorization_pending') return { status: 'pending' }
+  if (!answer.ok || typeof body.access_token !== 'string') {
+    return { status: 'error', error: body?.error_description ?? body?.error ?? 'провайдер не выдал токен' }
+  }
+  if (typeof store?.set === 'function') await store.set(record.credentialRef, body.access_token)
+  return { status: 'ok' }
+}
+
+/**
+ * Keep polling the provider from the host until the handshake resolves. The page
+ * only asks for the current state: a browser refresh used to destroy the loop,
+ * and the token was then never collected even though the user had confirmed.
+ *
+ * @param record - the stored handshake, mutated with `status`.
+ * @param store - credentials service.
+ * @param ctx - for the log line.
+ */
+export function startDevicePoller(record, store, ctx) {
+  const tick = async () => {
+    if (record.done === true) return
+    let outcome
+    try {
+      outcome = await exchangeDeviceCode(record, store)
+    } catch (error) {
+      outcome = { status: 'error', error: String(error?.message ?? error) }
+    }
+    record.status = outcome.status
+    if (outcome.error !== undefined) record.error = outcome.error
+    if (outcome.status === 'pending') {
+      record.timer = setTimeout(tick, record.intervalMs)
+      return
+    }
+    record.done = true
+    deviceLog(ctx, `device/poll entry=${record.entryId} ${outcome.status}${outcome.error === undefined ? '' : `: ${outcome.error}`}`)
+  }
+  record.timer = setTimeout(tick, record.intervalMs)
+}
+
+/**
  * One line per OAuth step, to the process log. A handshake happens in a browser
  * tab and a host loop, so without these lines the only evidence of what went
  * wrong is a red word in the panel.
@@ -1018,7 +1077,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         const state = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
         const interval = Number(answerBody.interval ?? 5)
         const expiresIn = Number(answerBody.expires_in ?? 300)
-        deviceStates.set(state, {
+        const record = {
           entryId,
           credentialRef: makeCredentialRef(entryId),
           clientId,
@@ -1026,9 +1085,12 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
           deviceCode: answerBody.device_code,
           intervalMs: Math.max(1000, interval * 1000),
           expiresAt: Date.now() + Math.max(30, expiresIn) * 1000,
-          lastPollAt: Date.now(),
-        })
+          status: 'pending',
+          done: false,
+        }
+        deviceStates.set(state, record)
         deviceLog(ctx, `device/start entry=${entryId} state=${state} userCode=${answerBody.user_code} interval=${interval}s`)
+        startDevicePoller(record, credentialsOf(), ctx)
         return json(response, 200, {
           state,
           userCode: answerBody.user_code,
@@ -1038,46 +1100,18 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         })
       }
 
+      // The host owns the polling loop; this route only reports where it stands, so
+      // a page reload no longer throws away a confirmed handshake.
       if (request.method === 'POST' && parts[0] === 'auth' && parts[1] === 'device' && parts[2] === 'poll') {
         const body = await readBody(request)
         const state = String(body?.state ?? '')
         const record = deviceStates.get(state)
         if (record === undefined) return json(response, 200, { status: 'expired' })
-        if (Date.now() > record.expiresAt) {
-          deviceStates.delete(state)
-          return json(response, 200, { status: 'expired' })
-        }
-        if (Date.now() - record.lastPollAt < record.intervalMs) return json(response, 200, { status: 'pending' })
-        record.lastPollAt = Date.now()
-        const form = new URLSearchParams({ grant_type: 'device_code', code: record.deviceCode, client_id: record.clientId })
-        const store = credentialsOf()
-        if (typeof store?.resolve === 'function') {
-          const secret = await store.resolve(makeCredentialRef(`${record.entryId}-client`)).catch(() => undefined)
-          const value = secret?.value ?? (typeof secret === 'string' ? secret : undefined)
-          if (typeof value === 'string' && value !== '') form.set('client_secret', value)
-        }
-        const answer = await oauthTransport.fetch(record.tokenUrl, {
-          method: 'POST',
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body: form,
+        if (record.done === true && record.status === 'ok') deviceStates.delete(state)
+        return json(response, 200, {
+          status: record.done === true ? record.status : 'pending',
+          ...(record.error === undefined ? {} : { error: record.error }),
         })
-        const answerBody = await answer.json().catch(() => ({}))
-        if (answerBody?.error === 'authorization_pending') {
-          deviceLog(ctx, `device/poll state=${state} entry=${record.entryId} pending`)
-          return json(response, 200, { status: 'pending' })
-        }
-        if (!answer.ok || typeof answerBody.access_token !== 'string') {
-          deviceStates.delete(state)
-          deviceLog(ctx, `device/poll state=${state} entry=${record.entryId} failed: ${answerBody?.error ?? 'no token'} ${answerBody?.error_description ?? ''}`)
-          return json(response, 200, {
-            status: 'error',
-            error: answerBody?.error_description ?? answerBody?.error ?? 'провайдер не выдал токен',
-          })
-        }
-        if (typeof store?.set === 'function') await store.set(record.credentialRef, answerBody.access_token)
-        deviceLog(ctx, `device/poll state=${state} entry=${record.entryId} ok token stored`)
-        deviceStates.delete(state)
-        return json(response, 200, { status: 'ok' })
       }
 
       if (parts[0] === 'providers' && parts.length >= 2) {

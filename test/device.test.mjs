@@ -56,7 +56,7 @@ test('the device flow asks for a code, polls while pending, then stores the toke
   oauthTransport.fetch = async (url, init) => {
     calls.push({ url: String(url), body: String(init?.body ?? '') })
     if (String(url).includes('/device/code')) {
-      return new Response(JSON.stringify({ device_code: 'dev-1', user_code: 'h5nbcr6c', verification_url: 'https://oauth.yandex.com/device', interval: 5, expires_in: 300 }), { status: 200 })
+      return new Response(JSON.stringify({ device_code: 'dev-1', user_code: 'h5nbcr6c', verification_url: 'https://oauth.yandex.com/device', interval: 1, expires_in: 300 }), { status: 200 })
     }
     return new Response(JSON.stringify({ access_token: 'tok-1', token_type: 'bearer' }), { status: 200 })
   }
@@ -67,16 +67,13 @@ test('the device flow asks for a code, polls while pending, then stores the toke
     assert.equal(started.body.verificationUrl, 'https://oauth.yandex.com/device')
     assert.equal(typeof started.body.state, 'string')
 
-    // The provider asked for five seconds between polls; an immediate poll must not
-    // reach it, otherwise the provider starts answering with rate-limit errors.
-    const tooSoon = await call(handler, { method: 'POST', url: '/__fs/providers/0/auth/device/poll', body: { state: started.body.state } })
-    assert.equal(tooSoon.body.status, 'pending')
-    assert.equal(calls.length, 1)
-
-    // Pretend the interval passed.
-    const recordState = deviceStates.get(started.body.state)
-    recordState.lastPollAt = 0
-    const confirmed = await call(handler, { method: 'POST', url: '/__fs/providers/0/auth/device/poll', body: { state: started.body.state } })
+    // The host polls on its own; wait for it to land instead of asking on demand.
+    let confirmed
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      confirmed = await call(handler, { method: 'POST', url: '/__fs/providers/0/auth/device/poll', body: { state: started.body.state } })
+      if (confirmed.body.status !== 'pending') break
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
     assert.equal(confirmed.body.status, 'ok')
     assert.equal(record.stored.get('DSH_FILESTORE_ST_0009'), 'tok-1')
     assert.match(calls.at(-1).body, /grant_type=device_code/)
@@ -135,9 +132,12 @@ test('the handshake works before the entry is saved, and the id survives the sav
     assert.equal(started.status, 200)
     assert.equal(started.body.userCode, 'aaaa1111')
 
-    const recordState = deviceStates.get(started.body.state)
-    recordState.lastPollAt = 0
-    const confirmed = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+    let confirmed
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      confirmed = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+      if (confirmed.body.status !== 'pending') break
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
     assert.equal(confirmed.body.status, 'ok')
     // The token is already under the id the form will save with.
     assert.equal(record.stored.get('DSH_FILESTORE_ST_ABCD'), 'tok-2')
@@ -168,9 +168,12 @@ test('the application secret is stored apart from the token and sent on exchange
     assert.equal(record.stored.get('DSH_FILESTORE_ST_EFGH_CLIENT'), 'sec-3')
 
     const started = await call(handler, { method: 'POST', url: '/__fs/auth/device/start', body: { id: 'st-efgh', clientId: 'app-3', type: 'yadisk' } })
-    const recordState = deviceStates.get(started.body.state)
-    recordState.lastPollAt = 0
-    const confirmed = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+    let confirmed
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      confirmed = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+      if (confirmed.body.status !== 'pending') break
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
     assert.equal(confirmed.body.status, 'ok')
     assert.match(seen.at(-1), /client_secret=sec-3/)
     assert.equal(record.stored.get('DSH_FILESTORE_ST_EFGH'), 'tok-3')
