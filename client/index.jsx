@@ -389,31 +389,30 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
           ] }),
         ] }),
         jsx('div', { style: { margin: '4px 0 12px' }, children: [
-          jsx('button', {
-            style: styles.button,
-            disabled: busy || !deviceReady || device?.status === 'waiting',
-            title: deviceReady ? t('deviceConnect') : deviceBlockedReason,
-            onClick: startDevice,
-            children: t('deviceConnect'),
-          }),
-          // Why the button does nothing, in words instead of a tooltip: a greyed
-          // button with a hidden reason reads as broken.
-          deviceReady ? null : jsx('div', { style: { ...styles.hint, marginTop: 4 }, children: deviceBlockedReason }),
-          device === null ? null : jsxs('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 }, children: [
-            jsx('strong', { style: { fontSize: 20, letterSpacing: 3, fontFamily: 'monospace' }, children: device.userCode }),
-            jsx(IconButton, {
+          jsx('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }, children: [
+            jsx('button', {
+              style: styles.button,
+              disabled: busy || !deviceReady || device?.status === 'waiting',
+              title: deviceReady ? t('deviceConnect') : deviceBlockedReason,
+              onClick: startDevice,
+              children: t('deviceConnect'),
+            }),
+            device === null ? null : jsx('strong', { style: { fontSize: 20, letterSpacing: 3, fontFamily: 'monospace' }, children: device.userCode }),
+            device === null ? null : jsx(IconButton, {
               icon: 'copy',
               title: t('deviceCopy'),
               onClick: () => copyCode(device.userCode),
             }),
-            jsx('button', {
-              style: styles.button,
-              onClick: () => window.open(device.verificationUrl, '_blank', 'noopener'),
-              children: t('deviceOpenButton'),
-            }),
-            jsx('span', { style: styles.hint, children: copied ? t('deviceCopied') : t('deviceOpen') }),
-            jsx('span', { style: styles.hint, children: device.status === 'ok' ? t('deviceDone') : device.status === 'error' ? `${t('failed')}: ${device.error}` : t('deviceWaiting') }),
+            device === null ? null : jsx('span', { style: styles.hint, children: copied ? t('deviceCopied') : '' }),
           ] }),
+          // Why the button does nothing, in words instead of a tooltip: a greyed
+          // button with a hidden reason reads as broken.
+          deviceReady ? null : jsx('div', { style: { ...styles.hint, marginTop: 4 }, children: deviceBlockedReason }),
+          device === null ? null : jsx('div', { style: { ...styles.hint, marginTop: 6 }, children: [
+            `${t('deviceOpen')} `,
+            jsx('a', { href: device.verificationUrl, target: '_blank', rel: 'noreferrer', children: t('deviceOpenLink') }),
+          ] }),
+          device === null ? null : jsx('div', { style: { ...styles.hint, marginTop: 6 }, children: device.status === 'ok' ? t('deviceDone') : device.status === 'error' ? `${t('failed')}: ${device.error}` : t('deviceWaiting') }),
         ] }),
       ] })
       : jsxs('div', { children: [
