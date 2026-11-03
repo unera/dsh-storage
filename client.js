@@ -336,7 +336,7 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
     ]
   });
 }
-function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
+function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
   const editing = initial !== void 0;
   const [entryId] = (0, import_react.useState)(() => initial?.id ?? `st-${Math.random().toString(36).slice(2, 6)}`);
   const [type, setType] = (0, import_react.useState)(initial?.type ?? types[0] ?? "local");
@@ -407,7 +407,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
           if (answer.status === "ok") {
             setDevice((current) => current === null ? null : { ...current, status: "ok" });
             setToken("");
-            await load();
+            if (typeof onRefresh === "function") await onRefresh();
             return;
           }
           if (answer.status === "pending") {
@@ -598,7 +598,7 @@ function StoragePage(props) {
     setProviders(next);
     return next;
   };
-  const load2 = async () => {
+  const load = async () => {
     setError(null);
     try {
       await fetchOnce();
@@ -619,7 +619,7 @@ function StoragePage(props) {
     }
   };
   (0, import_react.useEffect)(() => {
-    load2();
+    load();
   }, []);
   const act = async (run, { optimistic, until } = {}) => {
     if (typeof optimistic === "function") setProviders((previous) => optimistic(previous));
@@ -639,7 +639,7 @@ function StoragePage(props) {
       if (last !== void 0) setProviders(last);
     } catch (problem) {
       setError(problem.message);
-      await load2();
+      await load();
     } finally {
       setBusy(false);
     }
@@ -662,6 +662,7 @@ function StoragePage(props) {
       t,
       first: providers.length === 0 && form.initial === void 0,
       initial: form.initial,
+      onRefresh: load,
       onCancel: () => {
         setAdding(false);
         setEditingId(null);

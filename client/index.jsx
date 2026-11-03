@@ -191,7 +191,7 @@ function StorageRow({ provider, capabilities, t, onTest, onPrimary, onRemove, on
  * it creates a new one (POST). The fields depend on the type, and the type itself
  * cannot change while editing: an existing entry keeps its driver.
  */
-function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
+function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
   const editing = initial !== undefined
   // One id per form, allocated on open and sent with the save: a token taken by
   // the device handshake before saving then lands on this very entry.
@@ -286,8 +286,9 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
             setDevice(current => current === null ? null : { ...current, status: 'ok' })
             setToken('')
             // The token lives on the host and is never printed. Re-read the list so
-            // the row shows that a secret is configured.
-            await load()
+            // the row shows that a token is configured; `load` belongs to the page,
+            // so it arrives as a prop.
+            if (typeof onRefresh === 'function') await onRefresh()
             return
           }
           if (answer.status === 'pending') {
@@ -577,6 +578,7 @@ export function StoragePage(props) {
         t,
         first: providers.length === 0 && form.initial === undefined,
         initial: form.initial,
+        onRefresh: load,
         onCancel: () => { setAdding(false); setEditingId(null) },
         onSaved: async () => {
           const wasEditing = form.initial !== undefined

@@ -95,6 +95,12 @@ async function startFakeDisk() {
       return
     }
     if (url.pathname === '/v1/disk/resources/upload') {
+      // A folder must exist before anything can be uploaded into it.
+      const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+      if (parent !== '' && !dirs.has(parent)) {
+        response.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ description: 'Specified path does not exist' }))
+        return
+      }
       // Yandex answers the link request to a GET; anything else is a 403, and a
       // driver that asks with PUT looks like a permissions problem.
       if (request.method !== 'GET') {

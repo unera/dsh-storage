@@ -83,6 +83,26 @@ export function createYandexDriver(entry, { resolveSecret, fetchFn = fetch } = {
     return text === '' ? undefined : JSON.parse(text)
   }
 
+  /**
+   * Yandex will not upload into a folder that does not exist, so every parent has
+   * to be created first — `mkdir -p`, one request per level.
+   *
+   * @param key - normalized key whose parents are needed.
+   */
+  const ensureParents = async key => {
+    const segments = key.split('/').slice(0, -1)
+    let prefix = ''
+    for (const segment of segments) {
+      prefix = prefix === '' ? segment : `${prefix}/${segment}`
+      try {
+        await call('PUT', `${api}/resources?path=${encodeURIComponent(pathFor(prefix))}`)
+      } catch (error) {
+        // 409 means it is already there, which is what we wanted.
+        if (error.code !== 'FILESTORE_CONFLICT') throw error
+      }
+    }
+  }
+
   const driver = {
     id: entry.id,
     type: entry.type,
@@ -152,6 +172,7 @@ export function createYandexDriver(entry, { resolveSecret, fetchFn = fetch } = {
         : data
       // GET, not PUT: the API hands out the upload link in response to a GET, and
       // answers 403 Forbidden to anything else. The bytes go to the link itself.
+      await ensureParents(normalized)
       const link = await call('GET', `${api}/resources/upload?path=${encodeURIComponent(pathFor(normalized))}&overwrite=true`)
       if (typeof link?.href !== 'string') throw new FilestoreError('FILESTORE_ERROR', 'Яндекс.Диск не выдал ссылку на загрузку')
       const response = await fetchFn(link.href, { method: 'PUT', body })
