@@ -63,8 +63,10 @@ var DICTIONARIES = {
     "token": "OAuth token",
     "deviceConnect": "Connect with a code",
     "deviceCode": "Code",
-    "deviceOpen": "Open and enter it:",
-    "deviceOpenButton": "Open",
+    "deviceOpen": "Enter this code on the page:",
+    "deviceOpenButton": "Open the page",
+    "deviceCopy": "Copy the code to the clipboard",
+    "deviceCopied": "copied",
     "deviceWaiting": "Waiting for confirmation\u2026",
     "deviceDone": "Connected. The token is stored on the host and never shown \u2014 press Check to confirm access.",
     "deviceSaveFirst": "Save the storage first, then connect it by code",
@@ -127,8 +129,10 @@ var DICTIONARIES = {
     "token": "OAuth-\u0442\u043E\u043A\u0435\u043D",
     "deviceConnect": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u043F\u043E \u043A\u043E\u0434\u0443",
     "deviceCode": "\u041A\u043E\u0434",
-    "deviceOpen": "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0438 \u0432\u0432\u0435\u0434\u0438\u0442\u0435:",
-    "deviceOpenButton": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C",
+    "deviceOpen": "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u044D\u0442\u043E\u0442 \u043A\u043E\u0434 \u043D\u0430 \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0435:",
+    "deviceOpenButton": "\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443",
+    "deviceCopy": "\u0421\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043E\u0434 \u0432 \u0431\u0443\u0444\u0435\u0440 \u043E\u0431\u043C\u0435\u043D\u0430",
+    "deviceCopied": "\u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u043E",
     "deviceWaiting": "\u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F\u2026",
     "deviceDone": "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u043E. \u0422\u043E\u043A\u0435\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D \u043D\u0430 \u0445\u043E\u0441\u0442\u0435 \u0438 \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C\xBB, \u0447\u0442\u043E\u0431\u044B \u0443\u0431\u0435\u0434\u0438\u0442\u044C\u0441\u044F.",
     "deviceSaveFirst": "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435, \u043F\u043E\u0442\u043E\u043C \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u0439\u0442\u0435 \u043F\u043E \u043A\u043E\u0434\u0443",
@@ -181,6 +185,7 @@ var ICONS = {
   yadisk: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="#fc3f1d"/><path d="M9 18V9.2c0-2 1.3-3.2 3.3-3.2H15v2.4h-2.2c-.8 0-1.2.4-1.2 1.2V11l3.6 7h-2.7l-3-6v6z" fill="#fff"/></svg>'),
   edit: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16z"/></svg>'),
   save: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>'),
+  copy: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>'),
   cancel: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'),
   test: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/></svg>'),
   primary: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.9 5.9 6.1.9-4.4 4.3 1 6.4-5.6-3-5.6 3 1-6.4L3 9.8l6.1-.9z"/></svg>'),
@@ -348,7 +353,16 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
   const [clientSecret, setClientSecret] = (0, import_react.useState)("");
   const [token, setToken] = (0, import_react.useState)("");
   const [device, setDevice] = (0, import_react.useState)(null);
-  const [deviceState, setDeviceState] = (0, import_react.useState)(null);
+  const [copied, setCopied] = (0, import_react.useState)(false);
+  const copyCode = async (value) => {
+    try {
+      if (navigator?.clipboard?.writeText !== void 0) await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2e3);
+    } catch {
+      setCopied(false);
+    }
+  };
   const [secret, setSecret] = (0, import_react.useState)("");
   const [enabled, setEnabled] = (0, import_react.useState)(initial?.enabled !== false);
   const [readOnly, setReadOnly] = (0, import_react.useState)(initial?.readOnly === true);
@@ -378,11 +392,8 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
       setError(t("clientIdNeeded"));
       return;
     }
-    const popup = typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
     try {
       const started = await request("/auth/device/start", { method: "POST", body: { id: entryId, clientId: clientId.trim(), type } });
-      if (popup !== null && popup.closed !== true) popup.location.href = started.verificationUrl;
-      else if (typeof window !== "undefined") window.open(started.verificationUrl, "_blank", "noopener");
       setDeviceState(started.state);
       setDevice({ userCode: started.userCode, verificationUrl: started.verificationUrl, status: "waiting" });
       const intervalMs = Math.max(1e3, Number(started.interval ?? 5) * 1e3);
@@ -411,7 +422,6 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
       };
       setTimeout(poll, intervalMs);
     } catch (problem) {
-      if (popup !== null && popup.closed !== true) popup.close();
       setError(problem.message);
     }
   };
@@ -502,20 +512,21 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
         // Why the button does nothing, in words instead of a tooltip: a greyed
         // button with a hidden reason reads as broken.
         deviceReady ? null : (0, import_jsx_runtime.jsx)("div", { style: { ...styles.hint, marginTop: 4 }, children: deviceBlockedReason }),
-        device === null ? null : (0, import_jsx_runtime.jsx)("div", { style: { marginTop: 8 }, children: [
-          (0, import_jsx_runtime.jsx)("div", { children: [t("deviceCode"), ": ", (0, import_jsx_runtime.jsx)("strong", { style: { fontSize: 18, letterSpacing: 2 }, children: device.userCode })] }),
-          (0, import_jsx_runtime.jsx)("div", { style: { ...styles.hint, display: "flex", alignItems: "center", gap: 6, marginTop: 4 }, children: [
-            t("deviceOpen"),
-            (0, import_jsx_runtime.jsx)("a", { href: device.verificationUrl, target: "_blank", rel: "noreferrer", children: device.verificationUrl }),
-            (0, import_jsx_runtime.jsx)("button", { style: styles.button, onClick: () => window.open(device.verificationUrl, "_blank", "noopener"), children: t("deviceOpenButton") })
-          ] }),
-          (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: device.status === "ok" ? t("deviceDone") : device.status === "error" ? `${t("failed")}: ${device.error}` : t("deviceWaiting") })
+        device === null ? null : (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10 }, children: [
+          (0, import_jsx_runtime.jsx)("strong", { style: { fontSize: 20, letterSpacing: 3, fontFamily: "monospace" }, children: device.userCode }),
+          (0, import_jsx_runtime.jsx)(IconButton, {
+            icon: "copy",
+            title: t("deviceCopy"),
+            onClick: () => copyCode(device.userCode)
+          }),
+          (0, import_jsx_runtime.jsx)("button", {
+            style: styles.button,
+            onClick: () => window.open(device.verificationUrl, "_blank", "noopener"),
+            children: t("deviceOpenButton")
+          }),
+          (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: copied ? t("deviceCopied") : t("deviceOpen") }),
+          (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: device.status === "ok" ? t("deviceDone") : device.status === "error" ? `${t("failed")}: ${device.error}` : t("deviceWaiting") })
         ] })
-      ] }),
-      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
-        (0, import_jsx_runtime.jsx)("span", { children: t("token") }),
-        (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 60 }, value: token, onChange: (event) => setToken(event.target.value) }),
-        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: editing ? t("secretKeep") : t("tokenHint") })
       ] })
     ] }) : (0, import_jsx_runtime.jsxs)("div", { children: [
       (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
