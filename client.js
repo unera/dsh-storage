@@ -482,7 +482,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
       const text = await response.text();
       const started = text === "" ? {} : JSON.parse(text);
       if (!response.ok) throw new Error(started?.error ?? `HTTP ${response.status}`);
-      window.open(started.url, "_blank", "noopener,noreferrer");
+      window.location.assign(started.url);
     } catch (problem) {
       setError(problem.message);
     }
