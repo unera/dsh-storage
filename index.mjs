@@ -31,6 +31,7 @@ import { createHash } from 'node:crypto'
 import { createS3Driver } from './s3.mjs'
 import { createWebdavDriver } from './webdav.mjs'
 import { createYandexDriver } from './yadisk.mjs'
+import { createGoogleDriver } from './gdrive.mjs'
 
 /** Stable Loader identity. */
 export const name = 'dsh-storage'
@@ -56,7 +57,7 @@ export const MAX_READ_BYTES = 256 * 1024
 export const KEEP_FILE = '.dsh-storage-keep'
 
 /** Driver types this build can actually run. */
-export const PROVIDER_TYPES = Object.freeze(['local', 's3', 'webdav', 'yadisk'])
+export const PROVIDER_TYPES = Object.freeze(['local', 's3', 'webdav', 'yadisk', 'gdrive'])
 
 /**
  * What each type can do. The UI asks before drawing a button, and the host
@@ -73,6 +74,9 @@ export const CAPABILITIES = Object.freeze({
     put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
   }),
   yadisk: Object.freeze({
+    put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
+  }),
+  gdrive: Object.freeze({
     put: true, get: true, list: true, stat: true, delete: true, mkdir: true, free: true,
   }),
 })
@@ -436,6 +440,7 @@ export const DRIVERS = Object.freeze({
   s3: createS3Driver,
   webdav: createWebdavDriver,
   yadisk: createYandexDriver,
+  gdrive: createGoogleDriver,
 })
 
 /** Map a Node fs error onto the storage vocabulary. */
