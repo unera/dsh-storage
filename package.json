@@ -1,6 +1,6 @@
 {
   "name": "@dr-co/dsh-storage",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Remote disks for DeepSeek Harness: cloud storages a model can read and write, plus encrypted backups on top of them",
   "type": "module",
   "main": "./index.mjs",
