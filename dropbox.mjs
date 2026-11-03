@@ -35,7 +35,8 @@ export function errorForDropbox(response, body) {
       : body?.error === undefined
         ? ''
         : typeof body.error === 'string' ? body.error : JSON.stringify(body.error)
-  const suffix = summary === '' ? '' : `: ${summary}`
+  const raw = typeof body?.raw === 'string' ? body.raw.slice(0, 300) : ''
+  const suffix = summary !== '' ? `: ${summary}` : raw !== '' ? `: ${raw}` : ''
   if (response.status === 401) return new FilestoreError('FILESTORE_UNAUTHORIZED', `Dropbox не принял токен (401)${suffix}`)
   if (response.status === 403) return new FilestoreError('FILESTORE_UNAUTHORIZED', `Dropbox отказал в доступе (403)${suffix}`)
   if (response.status === 404) return new FilestoreError('FILESTORE_NOT_FOUND', `Dropbox: объект не найден (404)${suffix}`)
@@ -66,7 +67,9 @@ export function createDropboxDriver(entry, { resolveSecret, resolveClientSecret,
     if (clientSecret === '') throw new FilestoreError('FILESTORE_CREDENTIAL_INVALID', 'Dropbox refresh token needs app secret')
     const form = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: parsed.refreshToken, client_id: clientId, client_secret: clientSecret })
     const response = await fetchFn(tokenApi, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form })
-    const body = await response.json().catch(() => ({}))
+    const text = await response.text().catch(() => '')
+    let body
+    try { body = text === '' ? {} : JSON.parse(text) } catch { body = { raw: text } }
     if (!response.ok || typeof body.access_token !== 'string') throw errorForDropbox(response, body)
     cached = { accessToken: body.access_token, expiresAt: Date.now() + Number(body.expires_in ?? 14_400) * 1000 }
     return cached
@@ -87,7 +90,7 @@ export function createDropboxDriver(entry, { resolveSecret, resolveClientSecret,
     })
     const text = await response.text().catch(() => '')
     let parsed
-    try { parsed = text === '' ? undefined : JSON.parse(text) } catch { parsed = undefined }
+    try { parsed = text === '' ? undefined : JSON.parse(text) } catch { parsed = { raw: text } }
     if (!response.ok) throw errorForDropbox(response, parsed)
     return parsed
   }
@@ -101,7 +104,7 @@ export function createDropboxDriver(entry, { resolveSecret, resolveClientSecret,
     })
     const text = await response.text().catch(() => '')
     let parsed
-    try { parsed = text === '' ? undefined : JSON.parse(text) } catch { parsed = undefined }
+    try { parsed = text === '' ? undefined : JSON.parse(text) } catch { parsed = { raw: text } }
     if (!response.ok) throw errorForDropbox(response, parsed)
     return parsed
   }
