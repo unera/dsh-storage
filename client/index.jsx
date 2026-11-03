@@ -413,7 +413,9 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
           // Why the button does nothing, in words instead of a tooltip: a greyed
           // button with a hidden reason reads as broken.
           deviceReady ? null : jsx('div', { style: { ...styles.hint, marginTop: 4 }, children: deviceBlockedReason }),
-          device === null ? null : jsx('div', { style: { ...styles.hint, marginTop: 6 }, children: [
+          // Aligned to the right edge and a touch larger: it is the instruction a
+          // person actually follows, not a footnote.
+          device === null ? null : jsx('div', { style: { marginTop: 8, textAlign: 'right', fontSize: 15 }, children: [
             `${t('deviceOpen')} `,
             jsx('a', { href: device.verificationUrl, target: '_blank', rel: 'noreferrer', children: t('deviceOpenLink') }),
           ] }),
