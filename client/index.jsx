@@ -423,11 +423,6 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
       ] })
       : type === 'dropbox'
       ? jsxs('div', { children: [
-        jsx('div', { style: styles.note, children: [
-          t('dropboxAppHelpBefore'), ' ',
-          jsx('a', { href: 'https://www.dropbox.com/developers/apps', target: '_blank', rel: 'noreferrer', children: t('dropboxAppHelpLink') }),
-          t('dropboxAppHelpAfter'),
-        ] }),
         jsx('div', { style: styles.row, children: [
           jsx('label', { style: styles.field, children: [
             jsx('span', { children: t('clientId') }),
