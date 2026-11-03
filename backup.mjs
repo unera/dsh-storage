@@ -373,6 +373,26 @@ export function killPids(pids) {
   }
 }
 
+/**
+ * Normalize a `backup-start` return value into a list of child pids. Accepts
+ * `{ pids: [...] }` or a bare array; anything else is empty.
+ */
+export function normalizePids(result) {
+  const raw = Array.isArray(result) ? result : Array.isArray(result?.pids) ? result.pids : []
+  return [...new Set(raw.filter(pid => Number.isSafeInteger(pid) && pid > 0))]
+}
+
+/**
+ * Dispatch `dsh-storage/backup-start` synchronously and collect the pids the
+ * owning hook returned. Uses `ctx.bail` (stops at the first non-empty return);
+ * contexts without `bail` return nothing.
+ */
+export function dispatchBackupStart(ctx, section, directory) {
+  const payload = { directory, section }
+  if (typeof ctx?.bail === 'function') return ctx.bail('dsh-storage/backup-start', payload)
+  return undefined
+}
+
 /** Create a fresh workspace directory inside the DSH tree. */
 export async function createWorkspace(home = dshHome()) {
   const root = backupWorkspacesDir(home)
@@ -721,6 +741,7 @@ export async function runBackup(ctx, entry, filestore, resolveSecret, options = 
   const pollIntervalMs = Number.isInteger(options.pollIntervalMs) && options.pollIntervalMs > 0 ? options.pollIntervalMs : POLL_INTERVAL_MS
   const workspace = await createWorkspace(options.dshHome)
   const stage = path.join(backupStageDir(options.dshHome), `stage-${randomUUID()}`)
+  const startPids = new Set()
   try {
     const handle = new BackupWorkspace(workspace)
 
@@ -747,13 +768,18 @@ export async function runBackup(ctx, entry, filestore, resolveSecret, options = 
       return { code: 'ok', message: 'empty backup was not uploaded', details: { sections: details, killed: [], discovered } }
     }
 
-    // 5. Process sections sequentially, polling status.json without blocking.
+    // 5. Process sections strictly sequentially. Each section first gets a
+    //    synchronous `backup-start` (hook returns child pids), the engine records
+    //    them as a `running` status, then the usual section event + polling runs.
     for (const name of sections) {
       const directory = path.join(workspace, name)
+      const hookPids = normalizePids(dispatchBackupStart(ctx, name, directory))
+      for (const pid of hookPids) startPids.add(pid)
+      atomicWriteStatus(directory, { status: 'running', pids: hookPids })
       const result = await processSection(ctx, { directory, section: name, timeoutMs, pollIntervalMs, sleep })
       details.push(result)
       if (result.outcome !== 'ok') {
-        const pids = collectPids(workspace)
+        const pids = [...new Set([...startPids, ...collectPids(workspace)])]
         killPids(pids)
         return {
           code: codeForOutcome(result.outcome),
@@ -790,7 +816,7 @@ export async function runBackup(ctx, entry, filestore, resolveSecret, options = 
     }
   } catch (error) {
     // Any unexpected failure: kill children, report a structured error.
-    const pids = collectPids(workspace).filter(pid => pid !== process.pid)
+    const pids = [...new Set([...startPids, ...collectPids(workspace)])].filter(pid => pid !== process.pid)
     killPids(pids)
     const mapped = error instanceof BackupError ? error : new BackupError('BACKUP_FAILED', String(error?.message ?? error))
     logger.error?.(`[dsh-storage] backup ${entry.name} failed: ${mapped.code} ${mapped.message}`)

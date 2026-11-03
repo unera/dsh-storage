@@ -6,9 +6,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
   atomicWriteStatus, archiveNamePattern, backupTimestamp, BackupWorkspace, buildBackupContainer, buildSectionPayload,
-  classifySection, collectPids, decodeBackupKey, discoverSections, encodeBackupKey, filterSections, isIgnoredSection,
-  makeBackupId, makeBackupKeyRef, nextBackupId, normalizeBackupEntry, processSection, readSectionStatus,
-  runBackup, sanitizeBackupName, trimBackupKey,
+  classifySection, collectPids, decodeBackupKey, discoverSections, dispatchBackupStart, encodeBackupKey, filterSections,
+  isIgnoredSection, makeBackupId, makeBackupKeyRef, nextBackupId, normalizeBackupEntry, normalizePids, processSection,
+  readSectionStatus, runBackup, sanitizeBackupName, trimBackupKey,
 } from '../backup.mjs'
 import { createLocalDriver, normalizeEntry } from '../index.mjs'
 
@@ -308,5 +308,70 @@ test('collectPids merges pids across sections', () => {
     assert.deepEqual(collectPids(root).sort(), [11, 12, 13])
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('normalizePids accepts {pids} and bare arrays, dedupes and filters', () => {
+  assert.deepEqual(normalizePids({ pids: [1, 2, 2, 0, -1, 1.5] }), [1, 2])
+  assert.deepEqual(normalizePids([3, 3, 4]), [3, 4])
+  assert.deepEqual(normalizePids(undefined), [])
+  assert.deepEqual(normalizePids({}), [])
+  assert.deepEqual(normalizePids('nope'), [])
+})
+
+test('dispatchBackupStart uses ctx.bail and returns nothing without it', () => {
+  const ctx = {
+    bail(name) {
+      assert.equal(name, 'dsh-storage/backup-start')
+      return { pids: [7] }
+    },
+  }
+  assert.deepEqual(dispatchBackupStart(ctx, 'db', '/x/db'), { pids: [7] })
+  assert.equal(dispatchBackupStart({}, 'db', '/x/db'), undefined)
+})
+
+test('backup-start runs before backup-section and sections are strictly sequential', async () => {
+  await withStorage(async ({ dshHome, driver }) => {
+    const events = []
+    const entry = { id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk', rotation: 2, timeoutSeconds: 5, ignore: [], include: [], credentialRef: 'X' }
+    const ctx = {
+      emit(_name, ws) { ws.section('a'); ws.section('b') },
+      bail(_name, { section }) { events.push(`start:${section}`); return undefined },
+      async parallel(_name, { section, directory }) {
+        events.push(`section:${section}`)
+        if (section === 'b') await new Promise(resolve => setTimeout(resolve, 30))
+        atomicWriteStatus(directory, { status: 'ok', pids: [] })
+      },
+    }
+    const result = await runBackup(ctx, entry, { driver: () => driver }, async () => undefined, { dshHome, pollIntervalMs: 20 })
+    assert.equal(result.code, 'ok')
+    assert.deepEqual(events, ['start:a', 'section:a', 'start:b', 'section:b'])
+  })
+})
+
+test('backup-start pids are written as running and killed on section error', async () => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])
+  const exited = new Promise(resolve => child.once('exit', (_code, signal) => resolve(signal)))
+  try {
+    await withStorage(async ({ dshHome, driver }) => {
+      const entry = { id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk', rotation: 2, timeoutSeconds: 5, ignore: [], include: [], credentialRef: 'X' }
+      const seen = []
+      const ctx = {
+        emit(_name, ws) { ws.section('db') },
+        bail(_name, { section }) { seen.push(['start', section]); return { pids: [child.pid] } },
+        async parallel(_name, { directory }) {
+          const status = readSectionStatus(directory)
+          seen.push(['status', status.status, status.pids])
+          atomicWriteStatus(directory, { status: 'error', message: 'boom', pids: [] })
+        },
+      }
+      const result = await runBackup(ctx, entry, { driver: () => driver }, async () => undefined, { dshHome, pollIntervalMs: 20 })
+      assert.equal(result.code, 'BACKUP_ERROR_STATUS')
+      assert.deepEqual(result.details.killed, [child.pid])
+      assert.deepEqual(seen[1], ['status', 'running', [child.pid]], 'engine wrote running with the start pids before the section event')
+      assert.equal(await exited, 'SIGKILL')
+    })
+  } finally {
+    child.kill('SIGKILL')
   }
 })

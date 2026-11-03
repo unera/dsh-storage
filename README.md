@@ -129,6 +129,15 @@ dsh plugin --profile web add @dr-co/dsh-storage
   `BackupWorkspace`. Участники синхронно создают любое число секций через
   `workspace.section(name)`; секция — это каталог, может нести
   `RESTORE.md` и обязана поддерживать `status.json`.
+- `dsh-storage/backup-start` — синхронно (`ctx.bail`), вызывается
+  последовательно для каждой выбранной секции прямо перед `backup-section`,
+  получает `{ directory, section }`. Хук синхронно стартует дочерний процесс и
+  возвращает PID(ы) — `{ pids: [...] }` или просто массив. Движок атомарно
+  пишет `status.json` как `running` с этими pids, затем идёт обычный
+  section-processing/polling. При timeout/error/no-status/child-failure хост
+  `SIGKILL` все PID из `backup-start` и из `status.json`, потом удаляет
+  workspace. Следующий `backup-start` — только после завершения предыдущей
+  секции.
 - `dsh-storage/backup-section` — асинхронно (`ctx.parallel`), получает
   `{ directory, section, signal }`. Хост не ждёт промис обработчика: он
   запускает событие и **опрашивает `status.json` не чаще 1 раза в секунду** с

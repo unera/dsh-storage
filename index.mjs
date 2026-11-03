@@ -33,8 +33,8 @@ import { createWebdavDriver } from './webdav.mjs'
 import { createYandexDriver } from './yadisk.mjs'
 import {
   BackupWorkspace, DEFAULT_ROTATION, DEFAULT_TIMEOUT_SECONDS, atomicWriteStatus, backupTimestamp, decodeBackupKey,
-  discoverSections, encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries, normalizeBackupEntry,
-  readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
+  discoverSections, dispatchBackupStart, encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries,
+  normalizeBackupEntry, normalizePids, readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
 } from './backup.mjs'
 import {
   SELF_SECTION_NAME, collectCredentialRefs, credentialsDocument, finalizeSelfSection, prepareSelfSection,
@@ -47,8 +47,8 @@ export const name = 'dsh-storage'
 // Re-export the backup engine so participants and tests reach one surface.
 export {
   BackupWorkspace, DEFAULT_ROTATION, DEFAULT_TIMEOUT_SECONDS, atomicWriteStatus, backupTimestamp, decodeBackupKey,
-  encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries, normalizeBackupEntry,
-  readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
+  dispatchBackupStart, encodeBackupKey, listSections, makeBackupKeyRef, nextBackupId, normalizeBackupEntries,
+  normalizeBackupEntry, normalizePids, readSectionStatus, removeWorkspace, runBackup, sanitizeBackupName, trimBackupKey,
 }
 
 // Re-export the self-backup participant surface.
@@ -60,6 +60,7 @@ export {
 /** Events the backup engine dispatches on the plugin context. */
 export const BACKUP_EVENTS = Object.freeze({
   prepare: 'dsh-storage/prepare-backup',
+  start: 'dsh-storage/backup-start',
   section: 'dsh-storage/backup-section',
 })
 
