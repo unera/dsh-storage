@@ -76,6 +76,10 @@ const styles = {
   note: { opacity: 0.7, fontSize: 12, marginTop: 8 },
 }
 
+// One shared keyframes block for the spinner: inline styles cannot declare
+// @keyframes, so every page that renders `styles.spinner` must mount this once.
+const SPIN_KEYFRAMES = '@keyframes dsh-storage-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }'
+
 async function request(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
     credentials: 'same-origin',
@@ -626,7 +630,7 @@ export function StoragePage(props) {
         jsx('th', { style: { ...styles.th, whiteSpace: 'nowrap' }, children: '' }),
       ] }) }),
       // One keyframes block for the spinner; inline styles cannot declare them.
-      jsx('style', { children: '@keyframes dsh-storage-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }' }),
+      jsx('style', { children: SPIN_KEYFRAMES }),
       jsx('tbody', { children: providers.map(provider => jsx(StorageRow, {
         provider,
         capabilities,
@@ -916,6 +920,9 @@ export function BackupPage(props) {
         jsx('th', { style: { ...styles.th, whiteSpace: 'nowrap' }, children: '' }),
         jsx('th', { style: { ...styles.th, whiteSpace: 'nowrap' }, children: '' }),
       ] }) }),
+      // The running/refreshing pills reuse styles.spinner, so this page needs the
+      // same keyframes block StoragePage mounts.
+      jsx('style', { children: SPIN_KEYFRAMES }),
       jsx('tbody', { children: backups.map(backup => jsx(BackupRow, {
         backup,
         providers,
