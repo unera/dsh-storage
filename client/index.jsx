@@ -346,7 +346,7 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
       return
     }
     try {
-      const response = await fetch('/api/filestore/auth/start', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: entryId }) })
+      const response = await fetch(`/__fs/providers/${entryId}/auth/start`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' } })
       const text = await response.text()
       const started = text === '' ? {} : JSON.parse(text)
       if (!response.ok) throw new Error(started?.error ?? `HTTP ${response.status}`)
