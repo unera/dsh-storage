@@ -397,7 +397,12 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
       return;
     }
     try {
-      const started = await request("/auth/device/start", { method: "POST", body: { id: entryId, clientId: clientId.trim(), type } });
+      const started = await request("/auth/device/start", {
+        method: "POST",
+        // The secret goes with the handshake: an unsaved entry has nowhere to keep
+        // it otherwise, and Yandex answers "Wrong client secret".
+        body: { id: entryId, clientId: clientId.trim(), type, ...clientSecret.trim() === "" ? {} : { clientSecret: clientSecret.trim() } }
+      });
       setDevice({ userCode: started.userCode, verificationUrl: started.verificationUrl, status: "waiting" });
       const intervalMs = Math.max(1e3, Number(started.interval ?? 5) * 1e3);
       const deadline = Date.now() + Math.max(30, Number(started.expiresIn ?? 300)) * 1e3;

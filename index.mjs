@@ -19,6 +19,8 @@ import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { createReadStream } from 'node:fs'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -863,6 +865,34 @@ export const oauthTransport = { fetch: (...args) => fetch(...args) }
 /** Started device handshakes, keyed by the state we handed to the browser. */
 export const deviceStates = new Map()
 
+/** Where unfinished handshakes are parked so a restart does not lose them. */
+export function pendingHandshakesPath() {
+  const home = process.env.DSH_HOME ?? path.join(homedir(), '.dsh')
+  return path.join(home, 'storage', 'device-pending.json')
+}
+
+/** Write the unfinished handshakes atomically; the file holds no secrets. */
+export async function savePendingHandshakes(file, records) {
+  try {
+    await mkdir(path.dirname(file), { recursive: true })
+    const temporary = `${file}.tmp`
+    await writeFile(temporary, JSON.stringify([...records], null, 2), { mode: 0o600 })
+    await rename(temporary, file)
+  } catch {
+    // Losing the file only costs one handshake, never a token.
+  }
+}
+
+/** Read parked handshakes; an unreadable file means none. */
+export async function loadPendingHandshakes(file) {
+  try {
+    const parsed = JSON.parse(await readFile(file, 'utf8'))
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
 /**
  * The handshake carried inside the state string.
  *
@@ -928,6 +958,32 @@ export async function exchangeDeviceCode(record, store) {
 }
 
 /**
+ * Pick up handshakes left over from before a restart and keep polling them.
+ *
+ * @param ctx - plugin context, for the log line.
+ * @param store - credentials service.
+ */
+export async function resumePendingHandshakes(ctx, store) {
+  const file = pendingHandshakesPath()
+  const records = await loadPendingHandshakes(file)
+  const live = []
+  for (const record of records) {
+    if (record?.done === true) continue
+    if (Date.now() > Number(record?.expiresAt ?? 0)) continue
+    const state = typeof record.state === 'string' ? record.state : encodeDeviceState(record)
+    record.state = state
+    deviceStates.set(state, record)
+    live.push(record)
+    startDevicePoller(record, store, ctx, async finished => {
+      const remaining = [...deviceStates.values()].filter(item => item !== finished && item.done !== true)
+      await savePendingHandshakes(file, remaining)
+    })
+  }
+  await savePendingHandshakes(file, live)
+  if (live.length > 0) deviceLog(ctx, `resumed ${live.length} pending handshake(s)`)
+}
+
+/**
  * Keep polling the provider from the host until the handshake resolves. The page
  * only asks for the current state: a browser refresh used to destroy the loop,
  * and the token was then never collected even though the user had confirmed.
@@ -936,7 +992,7 @@ export async function exchangeDeviceCode(record, store) {
  * @param store - credentials service.
  * @param ctx - for the log line.
  */
-export function startDevicePoller(record, store, ctx) {
+export function startDevicePoller(record, store, ctx, onFinish = undefined) {
   const tick = async () => {
     if (record.done === true) return
     let outcome
@@ -953,6 +1009,7 @@ export function startDevicePoller(record, store, ctx) {
     }
     record.done = true
     deviceLog(ctx, `device/poll entry=${record.entryId} ${outcome.status}${outcome.error === undefined ? '' : `: ${outcome.error}`}`)
+    if (typeof onFinish === 'function') await onFinish(record)
   }
   record.timer = setTimeout(tick, record.intervalMs)
 }
@@ -964,8 +1021,8 @@ export function startDevicePoller(record, store, ctx) {
  */
 function deviceLog(ctx, message) {
   const line = `[dsh-storage] ${message}`
-  if (typeof ctx?.logger?.info === 'function') ctx.logger.info(line)
-  else console.warn(line)
+  // stderr, so the line lands in the service journal next to everything else.
+  console.error(line)
 }
 
 /** Live OAuth handshakes, keyed by state; short-lived and single-use. */
@@ -1090,11 +1147,19 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         const body = await readBody(request)
         const entryId = typeof body?.id === 'string' ? body.id.trim() : ''
         const clientId = typeof body?.clientId === 'string' ? body.clientId.trim() : ''
+        const clientSecret = typeof body?.clientSecret === 'string' ? body.clientSecret.trim() : ''
         const type = typeof body?.type === 'string' ? body.type : 'yadisk'
         const descriptor = OAUTH_PROVIDERS[type]
         if (!/^st-[a-z0-9]{4,16}$/i.test(entryId)) return json(response, 400, { error: 'нужен идентификатор записи', code: 'FILESTORE_BAD_REQUEST' })
         if (descriptor?.deviceCodeUrl === undefined) return json(response, 400, { error: `тип ${type} не умеет вход по коду`, code: 'FILESTORE_NO_DEVICE_FLOW' })
         if (clientId === '') return json(response, 400, { error: 'нужен client_id приложения', code: 'FILESTORE_NO_CLIENT_ID' })
+        // The form may hold a secret that was never saved: an unsaved entry has no
+        // place to keep it yet, and the exchange would then answer "Wrong client
+        // secret". Store it now, under the id the save will use.
+        if (clientSecret !== '') {
+          const store = credentialsOf()
+          if (typeof store?.set === 'function') await store.set(makeCredentialRef(`${entryId}-client`), clientSecret)
+        }
         const form = new URLSearchParams({ client_id: clientId })
         if (typeof descriptor.scope === 'string') form.set('scope', descriptor.scope)
         const answer = await oauthTransport.fetch(descriptor.deviceCodeUrl, {
@@ -1124,8 +1189,14 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         }
         const state = encodeDeviceState(record)
         deviceStates.set(state, record)
+        const file = pendingHandshakesPath()
+        record.state = state
+        await savePendingHandshakes(file, [...deviceStates.values()].filter(item => item.done !== true))
         deviceLog(ctx, `device/start entry=${entryId} userCode=${answerBody.user_code} interval=${interval}s`)
-        startDevicePoller(record, credentialsOf(), ctx)
+        startDevicePoller(record, credentialsOf(), ctx, async finished => {
+          const remaining = [...deviceStates.values()].filter(item => item !== finished && item.done !== true)
+          await savePendingHandshakes(file, remaining)
+        })
         return json(response, 200, {
           state,
           userCode: answerBody.user_code,
@@ -1409,6 +1480,13 @@ export function apply(ctx, config = {}) {
   ctx.inject(['credentials'], child => {
     shared.credentials = child.credentials
     filestore.secretSource = () => shared.credentials
+    // A restart in the middle of a handshake used to lose it; pick it back up.
+    child.effect(() => {
+      const timer = setTimeout(() => {
+        resumePendingHandshakes(child, shared.credentials).catch(() => {})
+      }, 0)
+      return () => clearTimeout(timer)
+    }, 'dsh-storage: resume device handshakes')
   })
 
   filestore.source = () => {

@@ -202,3 +202,39 @@ test('a handshake survives a host restart: the state carries the device code', a
     await ctx.stop?.()
   }
 })
+
+test('an unsaved entry still exchanges: the secret arrives with the handshake', async () => {
+  deviceStates.clear()
+  const { ctx, handler, record } = await boot([])
+  const seen = []
+  const original = oauthTransport.fetch
+  oauthTransport.fetch = async (url, init) => {
+    seen.push(String(init?.body ?? ''))
+    return String(url).includes('/device/code')
+      ? new Response(JSON.stringify({ device_code: 'dev-9', user_code: 'dddd4444', verification_url: 'https://ya.ru/device', interval: 1, expires_in: 60 }), { status: 200 })
+      : new Response(JSON.stringify({ access_token: 'tok-9' }), { status: 200 })
+  }
+  try {
+    // No provider entry is saved yet: the form only has the id it will save with.
+    const started = await call(handler, {
+      method: 'POST',
+      url: '/__fs/auth/device/start',
+      body: { id: 'st-new1', clientId: 'app-9', clientSecret: 'sec-9', type: 'yadisk' },
+    })
+    assert.equal(started.status, 200)
+    assert.equal(record.stored.get('DSH_FILESTORE_ST_NEW1_CLIENT'), 'sec-9')
+
+    let confirmed
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      confirmed = await call(handler, { method: 'POST', url: '/__fs/auth/device/poll', body: { state: started.body.state } })
+      if (confirmed.body.status !== 'pending') break
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    assert.equal(confirmed.body.status, 'ok')
+    assert.match(seen.at(-1), /client_secret=sec-9/)
+    assert.equal(record.stored.get('DSH_FILESTORE_ST_NEW1'), 'tok-9')
+  } finally {
+    oauthTransport.fetch = original
+    await ctx.stop?.()
+  }
+})
