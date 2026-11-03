@@ -940,25 +940,26 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
       ] })
     ] }),
     (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
-      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+      (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, flex: "0 0 35%", minWidth: 200 }, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("backup.ignore") }),
         (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 64 }, value: ignore, placeholder: "logs\nnode_modules", onChange: (event) => setIgnore(event.target.value) }),
         (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.ignoreHint") })
       ] }),
-      (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+      (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, flex: "0 0 35%", minWidth: 200 }, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("backup.include") }),
         (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 64 }, value: include, placeholder: "db\n*", onChange: (event) => setInclude(event.target.value) }),
         (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.includeHint") })
       ] }),
-      (0, import_jsx_runtime.jsx)("div", { style: styles.field, children: [
+      (0, import_jsx_runtime.jsx)("div", { style: { ...styles.field, flex: "0 0 30%", minWidth: 200 }, children: [
         (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
           (0, import_jsx_runtime.jsx)("span", { children: t("backup.found") }),
           (0, import_jsx_runtime.jsx)("button", {
-            style: { ...styles.pill, ...styles.pillGrey, cursor: editing && !refreshing ? "pointer" : "default", border: "none", display: "inline-flex", alignItems: "center", gap: 6 },
+            style: styles.square,
             title: t("backup.refreshSections"),
+            "aria-label": t("backup.refreshSections"),
             disabled: !editing || refreshing,
             onClick: doRefreshSections,
-            children: refreshing ? (0, import_jsx_runtime.jsx)("span", { style: styles.spinner }) : `${t("backup.sections")}: ${sections.length}`
+            children: refreshing ? (0, import_jsx_runtime.jsx)("span", { style: styles.spinner }) : (0, import_jsx_runtime.jsx)("span", { style: { fontSize: 15, lineHeight: 1 }, children: "\u21BB" })
           })
         ] }),
         (0, import_jsx_runtime.jsx)("div", {

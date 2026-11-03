@@ -788,27 +788,28 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
       ] }),
     ] }),
     jsx('div', { style: styles.row, children: [
-      jsx('label', { style: styles.field, children: [
+      jsx('label', { style: { ...styles.field, flex: '0 0 35%', minWidth: 200 }, children: [
         jsx('span', { children: t('backup.ignore') }),
         jsx('textarea', { style: { ...styles.input, minHeight: 64 }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
         jsx('span', { style: styles.hint, children: t('backup.ignoreHint') }),
       ] }),
-      jsx('label', { style: styles.field, children: [
+      jsx('label', { style: { ...styles.field, flex: '0 0 35%', minWidth: 200 }, children: [
         jsx('span', { children: t('backup.include') }),
         jsx('textarea', { style: { ...styles.input, minHeight: 64 }, value: include, placeholder: 'db\n*', onChange: event => setInclude(event.target.value) }),
         jsx('span', { style: styles.hint, children: t('backup.includeHint') }),
       ] }),
-      jsx('div', { style: styles.field, children: [
+      jsx('div', { style: { ...styles.field, flex: '0 0 30%', minWidth: 200 }, children: [
         jsx('div', { style: { display: 'flex', alignItems: 'center', gap: 8 }, children: [
           jsx('span', { children: t('backup.found') }),
           jsx('button', {
-            style: { ...styles.pill, ...styles.pillGrey, cursor: editing && !refreshing ? 'pointer' : 'default', border: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 },
+            style: styles.square,
             title: t('backup.refreshSections'),
+            'aria-label': t('backup.refreshSections'),
             disabled: !editing || refreshing,
             onClick: doRefreshSections,
             children: refreshing
               ? jsx('span', { style: styles.spinner })
-              : `${t('backup.sections')}: ${sections.length}`,
+              : jsx('span', { style: { fontSize: 15, lineHeight: 1 }, children: '↻' }),
           }),
         ] }),
         jsx('div', { style: { ...styles.input, minHeight: 64, overflowY: 'auto', background: 'rgba(128,128,128,0.08)' }, children:
