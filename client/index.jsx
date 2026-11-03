@@ -272,7 +272,6 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved }) {
     }
     try {
       const started = await request('/auth/device/start', { method: 'POST', body: { id: entryId, clientId: clientId.trim(), type } })
-      setDeviceState(started.state)
       setDevice({ userCode: started.userCode, verificationUrl: started.verificationUrl, status: 'waiting' })
       const intervalMs = Math.max(1000, Number(started.interval ?? 5) * 1000)
       const deadline = Date.now() + Math.max(30, Number(started.expiresIn ?? 300)) * 1000
