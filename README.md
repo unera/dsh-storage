@@ -20,7 +20,14 @@ from and write to, and the same storages carry encrypted backups.
 - инструменты модели: `storage_list`, `storage_ls`, `storage_read`,
   `storage_write`, `storage_mkdir`, `storage_df`, `storage_delete`;
 - секция системного промпта `tool:filestore` (статическая — кэш промпта живёт);
-- настройки в namespace `dsh-storage` и админ-API `/__fs`.
+- настройки в namespace `dsh-storage` и админ-API `/__fs`;
+- зашифрованные backups с переносимой секцией `core`: плагины и версии,
+  конфигурация профилей и credentials для восстановления сопоставимого узла;
+- внешний API backup-скриптов из общего каталога `scripts/`.
+
+Цель backup — не только сохранить данные, но и перенести конфигурацию DSH на
+другой узел: установить DSH, восстановить плагины по lock-файлам, вернуть
+конфиги и credentials, затем перезапустить и проверить профиль.
 
 Чего нет: OAuth-провайдеров
 (Google), `rclone`, `sftp`. Всё это — следующие коммиты,
