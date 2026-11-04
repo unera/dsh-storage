@@ -1015,8 +1015,9 @@ ${name2}`);
             onDragStart: dragSection(name2),
             title: `${t("backup.dragHint")}: ${name2}`,
             "aria-label": `${t("backup.dragHint")}: ${name2}`,
-            style: { fontSize: 12, lineHeight: 1.5, cursor: "grab" }
-          }, name2))
+            style: { fontSize: 12, lineHeight: 1.5, cursor: "grab" },
+            children: name2
+          }))
         })
       ] })
     ] }),
