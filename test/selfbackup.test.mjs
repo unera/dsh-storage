@@ -216,7 +216,9 @@ test('the refresh-sections API runs prepare only and persists the discovered lis
       const refreshed = await callApi(record, { method: 'POST', path: '/api/filestore/backups/sections', body: { id: 'bk-0001' } })
       assert.equal(refreshed.status, 200)
       assert.deepEqual(refreshed.body.sections, ['dsh-storage.cfg', 'test'], 'self-backup and the always-on test participant are both discovered')
-      assert.deepEqual(record.document.backups[0].sections, refreshed.body.sections)
+      // Persistence is fire-and-forget: the response must not wait on it.
+      await new Promise(resolve => setTimeout(resolve, 10))
+      assert.deepEqual(record.document.backups[0].sections, ['dsh-storage.cfg', 'test'], 'persist eventually happens')
       // The list surface reflects the persisted sections after the refresh.
       const listed = await callApi(record, { path: '/api/filestore/backups' })
       assert.deepEqual(listed.body.backups[0].sections, ['dsh-storage.cfg', 'test'])

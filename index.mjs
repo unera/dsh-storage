@@ -1551,7 +1551,14 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     const entry = entries.find(item => item.id === body?.id)
     if (entry === undefined) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
     const discovered = await discoverSections(ctx, {})
-    await persistBackupSections(entry.id, discovered)
+    if (!discovered.includes(TEST_SECTION_NAME)) {
+      console.warn('[dsh-storage] discovered sections do not include the built-in test participant; the testhook listener may not be installed')
+    }
+    // The response never waits on the settings write: a stuck persistence must
+    // not leave the UI with an infinite spinner. The write is logged on failure.
+    persistBackupSections(entry.id, discovered).catch(error => {
+      console.warn(`[dsh-storage] could not persist discovered sections: ${String(error?.message ?? error)}`)
+    })
     return { status: 200, body: { sections: discovered } }
   }
 
