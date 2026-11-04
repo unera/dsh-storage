@@ -717,6 +717,7 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [dropTarget, setDropTarget] = useState(null)
   const editing = initial !== undefined
 
   const doRefreshSections = async () => {
@@ -731,6 +732,29 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
     } finally {
       setRefreshing(false)
     }
+  }
+
+  const dragSection = name => event => {
+    event.dataTransfer.setData('text/plain', name)
+    event.dataTransfer.effectAllowed = 'copy'
+  }
+
+  const appendSection = (setter, name) => {
+    setter(current => (current.trim() === '' ? name : `${current}\n${name}`))
+  }
+
+  const dropSection = (target, setter) => event => {
+    event.preventDefault()
+    const name = String(event.dataTransfer?.getData('text/plain') ?? '').trim()
+    setDropTarget(null)
+    if (name === '') return
+    appendSection(setter, name)
+  }
+
+  const dragOver = target => event => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    if (dropTarget !== target) setDropTarget(target)
   }
 
   const submit = async () => {
@@ -792,18 +816,30 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
         jsx('span', { style: styles.hint, children: t('backup.scheduleHint') }),
       ] }),
     ] }),
-    jsx('div', { style: styles.row, children: [
-      jsx('label', { style: { ...styles.field, flex: '0 0 35%', minWidth: 0 }, children: [
-        jsx('span', { children: t('backup.ignore') }),
-        jsx('textarea', { style: { ...styles.input, minHeight: 64, minWidth: 0, width: '100%', boxSizing: 'border-box' }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
-        jsx('span', { style: styles.hint, children: t('backup.ignoreHint') }),
-      ] }),
-      jsx('label', { style: { ...styles.field, flex: '0 0 35%', minWidth: 0 }, children: [
-        jsx('span', { children: t('backup.include') }),
-        jsx('textarea', { style: { ...styles.input, minHeight: 64, minWidth: 0, width: '100%', boxSizing: 'border-box' }, value: include, placeholder: 'db\n*', onChange: event => setInclude(event.target.value) }),
-        jsx('span', { style: styles.hint, children: t('backup.includeHint') }),
-      ] }),
-      jsx('div', { style: { ...styles.field, flex: '0 0 30%', minWidth: 0 }, children: [
+    jsx('div', { style: { display: 'grid', gridTemplateColumns: '35fr 35fr 30fr', gap: 12, marginBottom: 8, alignItems: 'start' }, children: [
+      jsx('label', {
+        style: { ...styles.field, minWidth: 0, ...(dropTarget === 'ignore' ? { outline: '2px dashed #5aa9e6', outlineOffset: 2, borderRadius: 6 } : {}) },
+        onDragOver: dragOver('ignore'),
+        onDragLeave: () => setDropTarget(current => (current === 'ignore' ? null : current)),
+        onDrop: dropSection('ignore', setIgnore),
+        children: [
+          jsx('span', { children: t('backup.ignore') }),
+          jsx('textarea', { 'aria-label': t('backup.ignore'), style: { ...styles.input, minHeight: 64, minWidth: 0, width: '100%', boxSizing: 'border-box' }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
+          jsx('span', { style: styles.hint, children: t('backup.ignoreHint') }),
+        ],
+      }),
+      jsx('label', {
+        style: { ...styles.field, minWidth: 0, ...(dropTarget === 'include' ? { outline: '2px dashed #5aa9e6', outlineOffset: 2, borderRadius: 6 } : {}) },
+        onDragOver: dragOver('include'),
+        onDragLeave: () => setDropTarget(current => (current === 'include' ? null : current)),
+        onDrop: dropSection('include', setInclude),
+        children: [
+          jsx('span', { children: t('backup.include') }),
+          jsx('textarea', { 'aria-label': t('backup.include'), style: { ...styles.input, minHeight: 64, minWidth: 0, width: '100%', boxSizing: 'border-box' }, value: include, placeholder: 'db\n*', onChange: event => setInclude(event.target.value) }),
+          jsx('span', { style: styles.hint, children: t('backup.includeHint') }),
+        ],
+      }),
+      jsx('div', { style: { ...styles.field, minWidth: 0 }, children: [
         jsx('div', { style: { display: 'flex', alignItems: 'center', gap: 8 }, children: [
           jsx('span', { children: t('backup.found') }),
           jsx('button', {
@@ -820,7 +856,14 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
         jsx('div', { style: { ...styles.input, minHeight: 64, minWidth: 0, overflowY: 'auto', background: 'rgba(128,128,128,0.08)' }, children:
           sections.length === 0
             ? jsx('div', { style: styles.hint, children: editing ? t('backup.foundEmpty') : t('backup.saveFirst') })
-            : sections.map(name => jsx('div', { key: name, style: { fontSize: 12, lineHeight: 1.5 } }, name)),
+            : sections.map(name => jsx('div', {
+              key: name,
+              draggable: true,
+              onDragStart: dragSection(name),
+              title: `${t('backup.dragHint')}: ${name}`,
+              'aria-label': `${t('backup.dragHint')}: ${name}`,
+              style: { fontSize: 12, lineHeight: 1.5, cursor: 'grab' },
+            }, name)),
         }),
       ] }),
     ] }),

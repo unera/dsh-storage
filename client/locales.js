@@ -108,6 +108,7 @@ export const DICTIONARIES = {
     'backup.found': 'Found',
     'backup.foundEmpty': 'press refresh to discover sections',
     'backup.saveFirst': 'save first, then refresh',
+    'backup.dragHint': 'drag onto Ignore or Include',
   },
   ru: {
     'nav.title': 'Хранилища',
@@ -215,5 +216,6 @@ export const DICTIONARIES = {
     'backup.found': 'Найдено',
     'backup.foundEmpty': 'нажмите «Обновить», чтобы обнаружить секции',
     'backup.saveFirst': 'сначала сохраните, затем обновите',
+    'backup.dragHint': 'перетащите в «Игнорировать» или «Включать»',
   },
 }

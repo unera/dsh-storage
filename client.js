@@ -141,7 +141,8 @@ var DICTIONARIES = {
     "backup.sectionsHint": "discovered sections from the last refresh",
     "backup.found": "Found",
     "backup.foundEmpty": "press refresh to discover sections",
-    "backup.saveFirst": "save first, then refresh"
+    "backup.saveFirst": "save first, then refresh",
+    "backup.dragHint": "drag onto Ignore or Include"
   },
   ru: {
     "nav.title": "\u0425\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430",
@@ -248,7 +249,8 @@ var DICTIONARIES = {
     "backup.sectionsHint": "\u043E\u0431\u043D\u0430\u0440\u0443\u0436\u0435\u043D\u043D\u044B\u0435 \u0441\u0435\u043A\u0446\u0438\u0438 \u0441 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0435\u0433\u043E \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F",
     "backup.found": "\u041D\u0430\u0439\u0434\u0435\u043D\u043E",
     "backup.foundEmpty": "\u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C\xBB, \u0447\u0442\u043E\u0431\u044B \u043E\u0431\u043D\u0430\u0440\u0443\u0436\u0438\u0442\u044C \u0441\u0435\u043A\u0446\u0438\u0438",
-    "backup.saveFirst": "\u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435, \u0437\u0430\u0442\u0435\u043C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u0435"
+    "backup.saveFirst": "\u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435, \u0437\u0430\u0442\u0435\u043C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u0435",
+    "backup.dragHint": "\u043F\u0435\u0440\u0435\u0442\u0430\u0449\u0438\u0442\u0435 \u0432 \xAB\u0418\u0433\u043D\u043E\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C\xBB \u0438\u043B\u0438 \xAB\u0412\u043A\u043B\u044E\u0447\u0430\u0442\u044C\xBB"
   }
 };
 
@@ -876,6 +878,7 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
   const [error, setError] = (0, import_react.useState)(null);
   const [busy, setBusy] = (0, import_react.useState)(false);
   const [refreshing, setRefreshing] = (0, import_react.useState)(false);
+  const [dropTarget, setDropTarget] = (0, import_react.useState)(null);
   const editing = initial !== void 0;
   const doRefreshSections = async () => {
     if (!editing || refreshing) return;
@@ -889,6 +892,26 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
     } finally {
       setRefreshing(false);
     }
+  };
+  const dragSection = (name2) => (event) => {
+    event.dataTransfer.setData("text/plain", name2);
+    event.dataTransfer.effectAllowed = "copy";
+  };
+  const appendSection = (setter, name2) => {
+    setter((current) => current.trim() === "" ? name2 : `${current}
+${name2}`);
+  };
+  const dropSection = (target, setter) => (event) => {
+    event.preventDefault();
+    const name2 = String(event.dataTransfer?.getData("text/plain") ?? "").trim();
+    setDropTarget(null);
+    if (name2 === "") return;
+    appendSection(setter, name2);
+  };
+  const dragOver = (target) => (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    if (dropTarget !== target) setDropTarget(target);
   };
   const submit = async () => {
     setBusy(true);
@@ -948,18 +971,30 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
         (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.scheduleHint") })
       ] })
     ] }),
-    (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
-      (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, flex: "0 0 35%", minWidth: 0 }, children: [
-        (0, import_jsx_runtime.jsx)("span", { children: t("backup.ignore") }),
-        (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 64, minWidth: 0, width: "100%", boxSizing: "border-box" }, value: ignore, placeholder: "logs\nnode_modules", onChange: (event) => setIgnore(event.target.value) }),
-        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.ignoreHint") })
-      ] }),
-      (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, flex: "0 0 35%", minWidth: 0 }, children: [
-        (0, import_jsx_runtime.jsx)("span", { children: t("backup.include") }),
-        (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 64, minWidth: 0, width: "100%", boxSizing: "border-box" }, value: include, placeholder: "db\n*", onChange: (event) => setInclude(event.target.value) }),
-        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.includeHint") })
-      ] }),
-      (0, import_jsx_runtime.jsx)("div", { style: { ...styles.field, flex: "0 0 30%", minWidth: 0 }, children: [
+    (0, import_jsx_runtime.jsx)("div", { style: { display: "grid", gridTemplateColumns: "35fr 35fr 30fr", gap: 12, marginBottom: 8, alignItems: "start" }, children: [
+      (0, import_jsx_runtime.jsx)("label", {
+        style: { ...styles.field, minWidth: 0, ...dropTarget === "ignore" ? { outline: "2px dashed #5aa9e6", outlineOffset: 2, borderRadius: 6 } : {} },
+        onDragOver: dragOver("ignore"),
+        onDragLeave: () => setDropTarget((current) => current === "ignore" ? null : current),
+        onDrop: dropSection("ignore", setIgnore),
+        children: [
+          (0, import_jsx_runtime.jsx)("span", { children: t("backup.ignore") }),
+          (0, import_jsx_runtime.jsx)("textarea", { "aria-label": t("backup.ignore"), style: { ...styles.input, minHeight: 64, minWidth: 0, width: "100%", boxSizing: "border-box" }, value: ignore, placeholder: "logs\nnode_modules", onChange: (event) => setIgnore(event.target.value) }),
+          (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.ignoreHint") })
+        ]
+      }),
+      (0, import_jsx_runtime.jsx)("label", {
+        style: { ...styles.field, minWidth: 0, ...dropTarget === "include" ? { outline: "2px dashed #5aa9e6", outlineOffset: 2, borderRadius: 6 } : {} },
+        onDragOver: dragOver("include"),
+        onDragLeave: () => setDropTarget((current) => current === "include" ? null : current),
+        onDrop: dropSection("include", setInclude),
+        children: [
+          (0, import_jsx_runtime.jsx)("span", { children: t("backup.include") }),
+          (0, import_jsx_runtime.jsx)("textarea", { "aria-label": t("backup.include"), style: { ...styles.input, minHeight: 64, minWidth: 0, width: "100%", boxSizing: "border-box" }, value: include, placeholder: "db\n*", onChange: (event) => setInclude(event.target.value) }),
+          (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.includeHint") })
+        ]
+      }),
+      (0, import_jsx_runtime.jsx)("div", { style: { ...styles.field, minWidth: 0 }, children: [
         (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
           (0, import_jsx_runtime.jsx)("span", { children: t("backup.found") }),
           (0, import_jsx_runtime.jsx)("button", {
@@ -973,7 +1008,14 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
         ] }),
         (0, import_jsx_runtime.jsx)("div", {
           style: { ...styles.input, minHeight: 64, minWidth: 0, overflowY: "auto", background: "rgba(128,128,128,0.08)" },
-          children: sections.length === 0 ? (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: editing ? t("backup.foundEmpty") : t("backup.saveFirst") }) : sections.map((name2) => (0, import_jsx_runtime.jsx)("div", { key: name2, style: { fontSize: 12, lineHeight: 1.5 } }, name2))
+          children: sections.length === 0 ? (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: editing ? t("backup.foundEmpty") : t("backup.saveFirst") }) : sections.map((name2) => (0, import_jsx_runtime.jsx)("div", {
+            key: name2,
+            draggable: true,
+            onDragStart: dragSection(name2),
+            title: `${t("backup.dragHint")}: ${name2}`,
+            "aria-label": `${t("backup.dragHint")}: ${name2}`,
+            style: { fontSize: 12, lineHeight: 1.5, cursor: "grab" }
+          }, name2))
         })
       ] })
     ] }),
