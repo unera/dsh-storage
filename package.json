@@ -10,6 +10,7 @@
     "./backup": "./backup.mjs",
     "./selfbackup": "./selfbackup.mjs",
     "./testhook": "./testhook.mjs",
+    "./scripts": "./scripts.mjs",
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
@@ -21,6 +22,7 @@
     "backup.mjs",
     "selfbackup.mjs",
     "testhook.mjs",
+    "scripts.mjs",
     "client.js",
     "cordis.patch.yml",
     "README.md",

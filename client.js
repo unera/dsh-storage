@@ -837,7 +837,7 @@ function StoragePage(props) {
   ] });
 }
 var BACKUP_SECTION_ID = "backup";
-function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, running }) {
+function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, running, formOpen }) {
   const provider = providers.find((item) => item.id === backup.providerId);
   const isRunning = running || backup.running === true;
   const lastRun = backup.lastRun;
@@ -859,7 +859,7 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
         lastKind == null ? null : (0, import_jsx_runtime.jsx)(Pill, { tone: lastTone, hint: lastHint, children: lastKind === "ok" ? t("backup.okShort") : t("backup.errShort") })
       ] }) }),
       (0, import_jsx_runtime.jsx)("td", { style: { ...styles.td, whiteSpace: "nowrap", verticalAlign: "top" }, children: (0, import_jsx_runtime.jsx)("div", { style: styles.buttonColumn, children: [
-        isRunning ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("backup.running"), children: (0, import_jsx_runtime.jsx)("span", { style: styles.spinner }) }) : (0, import_jsx_runtime.jsx)(IconButton, { icon: "test", title: t("backup.run"), disabled: busy, onClick: () => onRun(backup.id) }),
+        isRunning ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("backup.running"), children: (0, import_jsx_runtime.jsx)("span", { style: styles.spinner }) }) : (0, import_jsx_runtime.jsx)(IconButton, { icon: "test", title: t("backup.run"), disabled: busy || formOpen, onClick: () => onRun(backup.id) }),
         (0, import_jsx_runtime.jsx)(IconButton, { icon: "edit", title: t("backup.edit"), disabled: busy || isRunning, onClick: () => onEdit(backup.id) }),
         (0, import_jsx_runtime.jsx)(IconButton, { icon: "remove", title: t("backup.remove"), disabled: busy || isRunning, onClick: () => onRemove(backup.id) })
       ] }) })
@@ -1178,6 +1178,7 @@ function BackupPage(props) {
         t,
         busy,
         running: runningId === backup.id,
+        formOpen: form !== null,
         onRun: run,
         onEdit: (id) => {
           setEditingId(id);

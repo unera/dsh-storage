@@ -672,7 +672,7 @@ export function StoragePage(props) {
 const BACKUP_SECTION_ID = 'backup'
 
 /** One backup row. */
-function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, running }) {
+function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, running, formOpen }) {
   const provider = providers.find(item => item.id === backup.providerId)
   const isRunning = running || backup.running === true
   const lastRun = backup.lastRun
@@ -698,7 +698,7 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
       jsx('td', { style: { ...styles.td, whiteSpace: 'nowrap', verticalAlign: 'top' }, children: jsx('div', { style: styles.buttonColumn, children: [
         isRunning
           ? jsx(Pill, { tone: styles.pillGrey, hint: t('backup.running'), children: jsx('span', { style: styles.spinner }) })
-          : jsx(IconButton, { icon: 'test', title: t('backup.run'), disabled: busy, onClick: () => onRun(backup.id) }),
+          : jsx(IconButton, { icon: 'test', title: t('backup.run'), disabled: busy || formOpen, onClick: () => onRun(backup.id) }),
         jsx(IconButton, { icon: 'edit', title: t('backup.edit'), disabled: busy || isRunning, onClick: () => onEdit(backup.id) }),
         jsx(IconButton, { icon: 'remove', title: t('backup.remove'), disabled: busy || isRunning, onClick: () => onRemove(backup.id) }),
       ] }) }),
@@ -1037,6 +1037,7 @@ export function BackupPage(props) {
         t,
         busy,
         running: runningId === backup.id,
+        formOpen: form !== null,
         onRun: run,
         onEdit: id => { setEditingId(id); setAdding(false) },
         onRemove: remove,

@@ -44,6 +44,10 @@ import {
 import {
   TEST_DURATION_MS, TEST_RESTORE_MD, TEST_SECTION_NAME, installTestHook, prepareTestSection, spawnTestChild,
 } from './testhook.mjs'
+import {
+  COMMAND_TIMEOUT_MS, SCRIPTS_SUBDIR, defaultScriptsDir, discoverScripts, installScriptsHook, scriptRestoreDoc,
+  scriptSectionName,
+} from './scripts.mjs'
 
 /** Stable Loader identity. */
 export const name = 'dsh-storage'
@@ -65,6 +69,12 @@ export {
 // Re-export the test participant surface.
 export {
   TEST_DURATION_MS, TEST_RESTORE_MD, TEST_SECTION_NAME, installTestHook, prepareTestSection, spawnTestChild,
+}
+
+// Re-export the external script participant surface.
+export {
+  COMMAND_TIMEOUT_MS, SCRIPTS_SUBDIR, defaultScriptsDir, discoverScripts, installScriptsHook, scriptRestoreDoc,
+  scriptSectionName,
 }
 
 /** Events the backup engine dispatches on the plugin context. */
@@ -2061,6 +2071,7 @@ export const Config = z.object({
     schedule: z.string().default(''),
     lastRun: z.any().default(null),
   })).default([]).volatile(),
+  backupScriptsDir: z.string().default(''),
 })
 
 /**
@@ -2151,9 +2162,11 @@ export function apply(ctx, config = {}) {
   // Self-backup: dsh-storage participates in its own backup. The prepare event
   // is synchronous (config + RESTORE.md written with sync fs); the section event
   // is asynchronous, so the owned credentials are resolved there and the status
-  // is marked ok last.
+  // is marked ok last. The common scripts directory is copied into the section
+  // (scripts are part of the backup configuration), under a dedicated subdir.
+  const scriptsDir = typeof config.backupScriptsDir === 'string' && config.backupScriptsDir !== '' ? config.backupScriptsDir : defaultScriptsDir()
   ctx.on(BACKUP_EVENTS.prepare, workspace => {
-    prepareSelfSection(workspace, { providers: filestore.entries(), backups: readBackups() })
+    prepareSelfSection(workspace, { providers: filestore.entries(), backups: readBackups(), scriptsDir })
   })
   ctx.on(BACKUP_EVENTS.section, payload => {
     if (payload?.section !== SELF_SECTION_NAME) return undefined
@@ -2168,6 +2181,10 @@ export function apply(ctx, config = {}) {
   // Always on for now: it adds a `test` section whose child simulates 30s of
   // work and reports ok, so an operator can watch prepare/start/section/polling.
   installTestHook(ctx)
+
+  // External scripts: every executable script in the common directory becomes a
+  // backup section, on top of the internal hooks.
+  installScriptsHook(ctx, { scriptsDir })
 
   // Cron scheduler. There is no host cron service, so the plugin ticks once a
   // minute and runs any backup whose `schedule` matches the current minute.

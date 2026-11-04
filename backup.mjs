@@ -698,7 +698,7 @@ export function classifySection({ name, directory, beforeIno, thrown, settled, t
   // (delegated), the section handler may return without touching status.json —
   // the child owns it — so only the deadline decides "no status update".
   if (delegated) {
-    if (timedOut) return { name, outcome: 'no-status-update', message: 'receiver did not rewrite status.json', pids }
+    if (timedOut) return { name, outcome: 'timeout', message: 'section exceeded its timeout', pids, status: status.status }
     return { name, outcome: 'running', pids }
   }
   if (settled || timedOut) {

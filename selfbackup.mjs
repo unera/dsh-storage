@@ -15,11 +15,12 @@
  *
  * @module @dr-co/dsh-storage/selfbackup
  */
-import { writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { atomicWriteStatus } from './backup.mjs'
+import { discoverScripts } from './scripts.mjs'
 
 /** The section this participant owns. */
 export const SELF_SECTION_NAME = 'dsh-storage.cfg'
@@ -121,6 +122,15 @@ tar -xf <имя>.tar
 
 ## 3. Порядок восстановления
 
+0. \`scripts/\` — исполняемые backup-скрипты из общего каталога. Скопируйте их
+   обратно в общий каталог скриптов (по умолчанию
+   \`~/.dsh/storage/backups/scripts\`) и верните права на запуск:
+
+   \`\`\`
+   cp -r scripts/. ~/.dsh/storage/backups/scripts/
+   chmod u+rx ~/.dsh/storage/backups/scripts/*
+   \`\`\`
+
 1. \`config.json\` — настройки плагина (providers/backups) без секретов.
    Восстановите их в namespace \`dsh-storage\` через
    \`settings.update('dsh-storage', { providers, backups })\`
@@ -139,13 +149,41 @@ tar -xf <имя>.tar
 `
 
 /**
- * Synchronous half of the participant: create the section and write the
- * secret-free config plus RESTORE.md. Runs inside the sync prepare event.
+ * Copy the common scripts directory into the self-section under `scripts/`,
+ * preserving names, contents and (where possible) the executable/readable mode.
+ * This is a one-way copy into the workspace, never a recursive scan of the
+ * workspace itself, so it cannot loop the backup.
+ *
+ * @returns the number of copied scripts.
  */
-export function prepareSelfSection(workspace, { providers = [], backups = [] } = {}) {
+export function copyScriptsInto(sectionDir, scriptsDir) {
+  if (typeof scriptsDir !== 'string' || scriptsDir === '') return 0
+  const scripts = discoverScripts(scriptsDir)
+  if (scripts.length === 0) return 0
+  const target = path.join(sectionDir, 'scripts')
+  mkdirSync(target, { recursive: true })
+  for (const script of scripts) {
+    const destination = path.join(target, script.name)
+    copyFileSync(script.path, destination)
+    try {
+      chmodSync(destination, statSync(script.path).mode & 0o777)
+    } catch {
+      // The content is still backed up; only the mode is best-effort.
+    }
+  }
+  return scripts.length
+}
+
+/**
+ * Synchronous half of the participant: create the section and write the
+ * secret-free config plus RESTORE.md and a copy of the scripts. Runs inside the
+ * sync prepare event.
+ */
+export function prepareSelfSection(workspace, { providers = [], backups = [], scriptsDir = '' } = {}) {
   const dir = workspace.section(SELF_SECTION_NAME)
   writeFileSync(path.join(dir, 'config.json'), `${JSON.stringify(sanitizeConfigDocument(providers, backups), null, 2)}\n`, 'utf8')
   writeFileSync(path.join(dir, 'RESTORE.md'), RESTORE_MD, 'utf8')
+  copyScriptsInto(dir, scriptsDir)
   return dir
 }
 
