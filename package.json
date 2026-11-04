@@ -9,7 +9,7 @@
     "./s3": "./s3.mjs",
     "./backup": "./backup.mjs",
     "./selfbackup": "./selfbackup.mjs",
-    "./testhook": "./testhook.mjs",
+    "./core": "./core.mjs",
     "./scripts": "./scripts.mjs",
     "./client": "./client.js",
     "./package.json": "./package.json"
@@ -21,7 +21,7 @@
     "yadisk.mjs",
     "backup.mjs",
     "selfbackup.mjs",
-    "testhook.mjs",
+    "core.mjs",
     "scripts.mjs",
     "client.js",
     "cordis.patch.yml",

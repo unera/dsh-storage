@@ -213,22 +213,21 @@ dsh-storage участвует в собственном бэкапе: на `pre
 credentials и собственный RESTORE.md внутри зашифрованного архива); открытым
 остаётся только общий `RESTORE.md`.
 
-### Тест-участник: `test`
+### Core: `core`
 
-Для ручной диагностики hooks/status в GUI встроен тестовый участник
-(`testhook.mjs`), пока **включён всегда** (без config-флага). На каждом backup
-он добавляет секцию `test`:
+Встроенный участник (`core.mjs`, не внешний script), который собирает максимум
+DSH-конфигурации для восстановления на другом узле:
 
-- `prepare-backup` — синхронно создаёт `test/` с `marker.txt` и `RESTORE.md`;
-- `backup-start` — запускает дочерний Node-процесс, который ждёт 30 секунд и
-  затем атомарно пишет `test/status.json` = `{status: "ok", pids: []}`;
-  возвращает `{ pids: [child.pid] }`;
-- `backup-section` — не блокирует событие; движок в `delegated`-режиме
-  опрашивает status.json до `ok`.
-
-В итоговый контейнер секция попадает как `test.tar.zstd.gpg` (marker + собственный
-RESTORE.md внутри; `status.json` исключён). Позже участника планируется убрать
-или сделать config-флагом.
+- `manifest.json` — secret-free: профили → установленные plugin-пакеты
+  (id + версия из `package.json`) и список `bundles`;
+- `profiles/<name>/package.json`, `pnpm-lock.yaml` (точные версии),
+  `pnpm-workspace.yaml`, `cordis.yml`, `cordis.patch.yml` — копируются как есть;
+- `credentials.json` — отдельно внутри (зашифрованного) payload секции, не в
+  открытом RESTORE.md: records через `ctx.credentials.listRecords()`/`readRecord`,
+  refs через `ctx.credentials.resolve()` по именам из хранилища
+  (`$DSH_HOME/.credentials.yaml`, т.к. enumeration для refs у API нет);
+- `RESTORE.md` — установка DSH, плагины точными версиями, восстановление
+  конфигов и credentials, restart/verify; ключ бэкапа не пишется.
 
 ### Скрипты: внешний API поверх hooks
 

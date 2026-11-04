@@ -42,8 +42,9 @@ import {
   providerClientRef, resolveCredentialRefs, sanitizeConfigDocument,
 } from './selfbackup.mjs'
 import {
-  TEST_DURATION_MS, TEST_RESTORE_MD, TEST_SECTION_NAME, installTestHook, prepareTestSection, spawnTestChild,
-} from './testhook.mjs'
+  CORE_RESTORE_MD, CORE_SECTION_NAME, buildCoreManifest, copyProfileFiles, finalizeCoreSection, installCoreHook,
+  prepareCoreSection, readProfileManifest, storeRefNames,
+} from './core.mjs'
 import {
   COMMAND_TIMEOUT_MS, SCRIPTS_SUBDIR, defaultScriptsDir, discoverScripts, installScriptsHook, scriptRestoreDoc,
   scriptSectionName,
@@ -66,9 +67,10 @@ export {
   providerClientRef, resolveCredentialRefs, sanitizeConfigDocument,
 }
 
-// Re-export the test participant surface.
+// Re-export the core participant surface.
 export {
-  TEST_DURATION_MS, TEST_RESTORE_MD, TEST_SECTION_NAME, installTestHook, prepareTestSection, spawnTestChild,
+  CORE_RESTORE_MD, CORE_SECTION_NAME, buildCoreManifest, copyProfileFiles, finalizeCoreSection, installCoreHook,
+  prepareCoreSection, readProfileManifest, storeRefNames,
 }
 
 // Re-export the external script participant surface.
@@ -1561,9 +1563,6 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     const entry = entries.find(item => item.id === body?.id)
     if (entry === undefined) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
     const discovered = await discoverSections(ctx, {})
-    if (!discovered.includes(TEST_SECTION_NAME)) {
-      console.warn('[dsh-storage] discovered sections do not include the built-in test participant; the testhook listener may not be installed')
-    }
     // The response never waits on the settings write: a stuck persistence must
     // not leave the UI with an infinite spinner. The write is logged on failure.
     persistBackupSections(entry.id, discovered).catch(error => {
@@ -2177,10 +2176,9 @@ export function apply(ctx, config = {}) {
     })
   })
 
-  // Built-in test participant for GUI diagnostics of the hooks/status flow.
-  // Always on for now: it adds a `test` section whose child simulates 30s of
-  // work and reports ok, so an operator can watch prepare/start/section/polling.
-  installTestHook(ctx)
+  // Core participant: capture the DSH configuration (profile/plugin manifests,
+  // metadata/config files) and credentials for restoring a comparable node.
+  installCoreHook(ctx)
 
   // External scripts: every executable script in the common directory becomes a
   // backup section, on top of the internal hooks.

@@ -505,7 +505,7 @@ test('refresh sections is not blocked by an active run lock', async () => {
       acquireRun('bk-0001')
       const refreshed = await callApi(record, { method: 'POST', path: '/api/filestore/backups/sections', body: { id: 'bk-0001' } })
       assert.equal(refreshed.status, 200)
-      assert.deepEqual(refreshed.body.sections, ['dsh-storage.cfg', 'test'], 'prepare-only refresh is not blocked by running')
+      assert.deepEqual(refreshed.body.sections, ['core', 'dsh-storage.cfg'], 'prepare-only refresh is not blocked by running')
     } finally {
       releaseRun('bk-0001')
       await ctx.stop?.()
