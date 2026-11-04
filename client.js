@@ -120,7 +120,7 @@ var DICTIONARIES = {
     "backup.timeoutHint": "per-section deadline; default 300.",
     "backup.schedule": "Schedule (cron)",
     "backup.scheduleHint": "five fields: minute hour day month weekday. Empty disables the schedule.",
-    "backup.ignore": "Ignore sections",
+    "backup.ignore": "Exclude",
     "backup.ignoreHint": "glob masks, one per line; empty excludes nothing.",
     "backup.key": "Encryption key",
     "backup.keyHint": "Passphrase for the OpenPGP archive; empty means no encryption.",
@@ -133,13 +133,13 @@ var DICTIONARIES = {
     "backup.ok": "Backup done",
     "backup.okShort": "ok",
     "backup.errShort": "err",
-    "backup.include": "Include sections",
+    "backup.include": "Include",
     "backup.includeHint": "glob masks, one per line; empty includes everything (*).",
     "backup.refreshSections": "Refresh section list",
     "backup.refreshing": "refreshing\u2026",
     "backup.sections": "Sections",
     "backup.sectionsHint": "discovered sections from the last refresh",
-    "backup.found": "Found",
+    "backup.found": "Registered",
     "backup.foundEmpty": "press refresh to discover sections",
     "backup.saveFirst": "save first, then refresh",
     "backup.dragHint": "drag onto Ignore or Include"
@@ -228,7 +228,7 @@ var DICTIONARIES = {
     "backup.timeoutHint": "\u043F\u0440\u0435\u0434\u0435\u043B \u043D\u0430 \u043E\u0434\u043D\u0443 \u0441\u0435\u043A\u0446\u0438\u044E; \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E 300.",
     "backup.schedule": "\u0420\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 (cron)",
     "backup.scheduleHint": "\u043F\u044F\u0442\u044C \u043F\u043E\u043B\u0435\u0439: \u043C\u0438\u043D\u0443\u0442\u0430 \u0447\u0430\u0441 \u0434\u0435\u043D\u044C \u043C\u0435\u0441\u044F\u0446 \u0434\u0435\u043D\u044C-\u043D\u0435\u0434\u0435\u043B\u0438. \u041F\u0443\u0441\u0442\u043E \u2014 \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u043E.",
-    "backup.ignore": "\u0418\u0433\u043D\u043E\u0440\u0438\u0440\u0443\u0435\u043C\u044B\u0435 \u0441\u0435\u043A\u0446\u0438\u0438",
+    "backup.ignore": "\u0418\u0441\u043A\u043B\u044E\u0447\u0430\u0442\u044C",
     "backup.ignoreHint": "glob-\u043C\u0430\u0441\u043A\u0438, \u043F\u043E \u043E\u0434\u043D\u043E\u0439 \u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0443; \u043F\u0443\u0441\u0442\u043E \u2014 \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0438\u0441\u043A\u043B\u044E\u0447\u0430\u0435\u0442.",
     "backup.key": "\u041A\u043B\u044E\u0447 \u0448\u0438\u0444\u0440\u043E\u0432\u0430\u043D\u0438\u044F",
     "backup.keyHint": "\u041F\u0430\u0440\u043E\u043B\u044C \u0434\u043B\u044F OpenPGP-\u0430\u0440\u0445\u0438\u0432\u0430; \u043F\u0443\u0441\u0442\u043E \u2014 \u0431\u0435\u0437 \u0448\u0438\u0444\u0440\u043E\u0432\u0430\u043D\u0438\u044F.",
@@ -241,13 +241,13 @@ var DICTIONARIES = {
     "backup.ok": "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u043A\u043E\u043F\u0438\u044F \u0441\u043E\u0437\u0434\u0430\u043D\u0430",
     "backup.okShort": "ok",
     "backup.errShort": "\u043E\u0448\u0438\u0431\u043A\u0430",
-    "backup.include": "\u0412\u043A\u043B\u044E\u0447\u0430\u0442\u044C \u0441\u0435\u043A\u0446\u0438\u0438",
+    "backup.include": "\u0412\u043A\u043B\u044E\u0447\u0430\u0442\u044C",
     "backup.includeHint": "glob-\u043C\u0430\u0441\u043A\u0438, \u043F\u043E \u043E\u0434\u043D\u043E\u0439 \u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0443; \u043F\u0443\u0441\u0442\u043E \u2014 \u0432\u0441\u0451 (*).",
     "backup.refreshSections": "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0441\u0435\u043A\u0446\u0438\u0439",
     "backup.refreshing": "\u043E\u0431\u043D\u043E\u0432\u043B\u044F\u044E\u2026",
     "backup.sections": "\u0421\u0435\u043A\u0446\u0438\u0438",
     "backup.sectionsHint": "\u043E\u0431\u043D\u0430\u0440\u0443\u0436\u0435\u043D\u043D\u044B\u0435 \u0441\u0435\u043A\u0446\u0438\u0438 \u0441 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0435\u0433\u043E \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F",
-    "backup.found": "\u041D\u0430\u0439\u0434\u0435\u043D\u043E",
+    "backup.found": "\u0417\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u043E",
     "backup.foundEmpty": "\u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C\xBB, \u0447\u0442\u043E\u0431\u044B \u043E\u0431\u043D\u0430\u0440\u0443\u0436\u0438\u0442\u044C \u0441\u0435\u043A\u0446\u0438\u0438",
     "backup.saveFirst": "\u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435, \u0437\u0430\u0442\u0435\u043C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u0435",
     "backup.dragHint": "\u043F\u0435\u0440\u0435\u0442\u0430\u0449\u0438\u0442\u0435 \u0432 \xAB\u0418\u0433\u043D\u043E\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C\xBB \u0438\u043B\u0438 \xAB\u0412\u043A\u043B\u044E\u0447\u0430\u0442\u044C\xBB"
@@ -972,15 +972,15 @@ ${name2}`);
         (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.scheduleHint") })
       ] })
     ] }),
-    (0, import_jsx_runtime.jsx)("div", { style: { display: "grid", gridTemplateColumns: "35fr 35fr 30fr", gap: 12, marginBottom: 8, alignItems: "start" }, children: [
+    (0, import_jsx_runtime.jsx)("div", { style: { display: "grid", gridTemplateColumns: "35fr 35fr 30fr", gap: 12, marginBottom: 8, alignItems: "stretch" }, children: [
       (0, import_jsx_runtime.jsx)("label", {
         style: { ...styles.field, minWidth: 0, ...dropTarget === "ignore" ? { outline: "2px dashed #5aa9e6", outlineOffset: 2, borderRadius: 6 } : {} },
         onDragOver: dragOver("ignore"),
         onDragLeave: () => setDropTarget((current) => current === "ignore" ? null : current),
         onDrop: dropSection("ignore", setIgnore),
         children: [
-          (0, import_jsx_runtime.jsx)("span", { children: t("backup.ignore") }),
-          (0, import_jsx_runtime.jsx)("textarea", { "aria-label": t("backup.ignore"), style: { ...styles.input, minHeight: 64, minWidth: 0, width: "100%", boxSizing: "border-box" }, value: ignore, placeholder: "logs\nnode_modules", onChange: (event) => setIgnore(event.target.value) }),
+          (0, import_jsx_runtime.jsx)("span", { style: { whiteSpace: "nowrap" }, children: t("backup.ignore") }),
+          (0, import_jsx_runtime.jsx)("textarea", { "aria-label": t("backup.ignore"), style: { ...styles.input, flex: 1, minHeight: 64, minWidth: 0, width: "100%", boxSizing: "border-box" }, value: ignore, placeholder: "logs\nnode_modules", onChange: (event) => setIgnore(event.target.value) }),
           (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.ignoreHint") })
         ]
       }),
@@ -990,14 +990,14 @@ ${name2}`);
         onDragLeave: () => setDropTarget((current) => current === "include" ? null : current),
         onDrop: dropSection("include", setInclude),
         children: [
-          (0, import_jsx_runtime.jsx)("span", { children: t("backup.include") }),
-          (0, import_jsx_runtime.jsx)("textarea", { "aria-label": t("backup.include"), style: { ...styles.input, minHeight: 64, minWidth: 0, width: "100%", boxSizing: "border-box" }, value: include, placeholder: "db\n*", onChange: (event) => setInclude(event.target.value) }),
+          (0, import_jsx_runtime.jsx)("span", { style: { whiteSpace: "nowrap" }, children: t("backup.include") }),
+          (0, import_jsx_runtime.jsx)("textarea", { "aria-label": t("backup.include"), style: { ...styles.input, flex: 1, minHeight: 64, minWidth: 0, width: "100%", boxSizing: "border-box" }, value: include, placeholder: "db\n*", onChange: (event) => setInclude(event.target.value) }),
           (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.includeHint") })
         ]
       }),
       (0, import_jsx_runtime.jsx)("div", { style: { ...styles.field, minWidth: 0 }, children: [
         (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
-          (0, import_jsx_runtime.jsx)("span", { children: t("backup.found") }),
+          (0, import_jsx_runtime.jsx)("span", { style: { whiteSpace: "nowrap" }, children: t("backup.found") }),
           (0, import_jsx_runtime.jsx)("button", {
             style: styles.square,
             title: t("backup.refreshSections"),
@@ -1008,15 +1008,30 @@ ${name2}`);
           })
         ] }),
         (0, import_jsx_runtime.jsx)("div", {
-          style: { ...styles.input, minHeight: 64, minWidth: 0, overflowY: "auto", background: "rgba(128,128,128,0.08)" },
+          style: { ...styles.input, flex: 1, minHeight: 64, minWidth: 0, boxSizing: "border-box", overflowY: "auto", background: "rgba(128,128,128,0.08)" },
           children: sections.length === 0 ? (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: editing ? t("backup.foundEmpty") : t("backup.saveFirst") }) : sections.map((name2) => (0, import_jsx_runtime.jsx)("div", {
             key: name2,
             draggable: true,
             onDragStart: dragSection(name2),
             title: `${t("backup.dragHint")}: ${name2}`,
             "aria-label": `${t("backup.dragHint")}: ${name2}`,
-            style: { fontSize: 12, lineHeight: 1.5, cursor: "grab" },
-            children: name2
+            style: {
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              lineHeight: 1.5,
+              cursor: "move",
+              padding: "2px 6px",
+              borderRadius: 4,
+              marginBottom: 4,
+              border: "1px solid rgba(128,128,128,0.28)",
+              background: "rgba(128,128,128,0.06)"
+            },
+            children: [
+              (0, import_jsx_runtime.jsx)("span", { "aria-hidden": true, style: { cursor: "grab", userSelect: "none", opacity: 0.55, fontSize: 11, lineHeight: 1 }, children: "\u283F" }),
+              (0, import_jsx_runtime.jsx)("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: name2 })
+            ]
           }))
         })
       ] })

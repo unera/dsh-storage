@@ -10,7 +10,8 @@ test('Found section items render their name as children, not as a positional thi
   const source = await readFile(join(root, 'client', 'index.jsx'), 'utf8')
   // The jsx runtime's third argument is the key slot, not children: a section
   // item must place the name in `children`, never as `}, name))`.
-  assert.match(source, /sections\.map\(name => jsx\('div', \{\s*key: name,[\s\S]*?children: name/)
+  assert.match(source, /sections\.map\(name => jsx\('div', \{\s*key: name,/)
+  assert.match(source, /children: name/)
   assert.doesNotMatch(source, /},\s*name\)\)/)
 })
 

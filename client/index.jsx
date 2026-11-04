@@ -820,15 +820,15 @@ function BackupForm({ providers, t, initial, sections, onCancel, onSaved, onRefr
         jsx('span', { style: styles.hint, children: t('backup.scheduleHint') }),
       ] }),
     ] }),
-    jsx('div', { style: { display: 'grid', gridTemplateColumns: '35fr 35fr 30fr', gap: 12, marginBottom: 8, alignItems: 'start' }, children: [
+    jsx('div', { style: { display: 'grid', gridTemplateColumns: '35fr 35fr 30fr', gap: 12, marginBottom: 8, alignItems: 'stretch' }, children: [
       jsx('label', {
         style: { ...styles.field, minWidth: 0, ...(dropTarget === 'ignore' ? { outline: '2px dashed #5aa9e6', outlineOffset: 2, borderRadius: 6 } : {}) },
         onDragOver: dragOver('ignore'),
         onDragLeave: () => setDropTarget(current => (current === 'ignore' ? null : current)),
         onDrop: dropSection('ignore', setIgnore),
         children: [
-          jsx('span', { children: t('backup.ignore') }),
-          jsx('textarea', { 'aria-label': t('backup.ignore'), style: { ...styles.input, minHeight: 64, minWidth: 0, width: '100%', boxSizing: 'border-box' }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
+          jsx('span', { style: { whiteSpace: 'nowrap' }, children: t('backup.ignore') }),
+          jsx('textarea', { 'aria-label': t('backup.ignore'), style: { ...styles.input, flex: 1, minHeight: 64, minWidth: 0, width: '100%', boxSizing: 'border-box' }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
           jsx('span', { style: styles.hint, children: t('backup.ignoreHint') }),
         ],
       }),
@@ -838,14 +838,14 @@ function BackupForm({ providers, t, initial, sections, onCancel, onSaved, onRefr
         onDragLeave: () => setDropTarget(current => (current === 'include' ? null : current)),
         onDrop: dropSection('include', setInclude),
         children: [
-          jsx('span', { children: t('backup.include') }),
-          jsx('textarea', { 'aria-label': t('backup.include'), style: { ...styles.input, minHeight: 64, minWidth: 0, width: '100%', boxSizing: 'border-box' }, value: include, placeholder: 'db\n*', onChange: event => setInclude(event.target.value) }),
+          jsx('span', { style: { whiteSpace: 'nowrap' }, children: t('backup.include') }),
+          jsx('textarea', { 'aria-label': t('backup.include'), style: { ...styles.input, flex: 1, minHeight: 64, minWidth: 0, width: '100%', boxSizing: 'border-box' }, value: include, placeholder: 'db\n*', onChange: event => setInclude(event.target.value) }),
           jsx('span', { style: styles.hint, children: t('backup.includeHint') }),
         ],
       }),
       jsx('div', { style: { ...styles.field, minWidth: 0 }, children: [
         jsx('div', { style: { display: 'flex', alignItems: 'center', gap: 8 }, children: [
-          jsx('span', { children: t('backup.found') }),
+          jsx('span', { style: { whiteSpace: 'nowrap' }, children: t('backup.found') }),
           jsx('button', {
             style: styles.square,
             title: t('backup.refreshSections'),
@@ -857,7 +857,7 @@ function BackupForm({ providers, t, initial, sections, onCancel, onSaved, onRefr
               : jsx('span', { style: { fontSize: 15, lineHeight: 1 }, children: '↻' }),
           }),
         ] }),
-        jsx('div', { style: { ...styles.input, minHeight: 64, minWidth: 0, overflowY: 'auto', background: 'rgba(128,128,128,0.08)' }, children:
+        jsx('div', { style: { ...styles.input, flex: 1, minHeight: 64, minWidth: 0, boxSizing: 'border-box', overflowY: 'auto', background: 'rgba(128,128,128,0.08)' }, children:
           sections.length === 0
             ? jsx('div', { style: styles.hint, children: editing ? t('backup.foundEmpty') : t('backup.saveFirst') })
             : sections.map(name => jsx('div', {
@@ -866,8 +866,17 @@ function BackupForm({ providers, t, initial, sections, onCancel, onSaved, onRefr
               onDragStart: dragSection(name),
               title: `${t('backup.dragHint')}: ${name}`,
               'aria-label': `${t('backup.dragHint')}: ${name}`,
-              style: { fontSize: 12, lineHeight: 1.5, cursor: 'grab' },
-              children: name,
+              style: {
+                display: 'flex', alignItems: 'center', gap: 6,
+                fontSize: 12, lineHeight: 1.5, cursor: 'move',
+                padding: '2px 6px', borderRadius: 4, marginBottom: 4,
+                border: '1px solid rgba(128,128,128,0.28)',
+                background: 'rgba(128,128,128,0.06)',
+              },
+              children: [
+                jsx('span', { 'aria-hidden': true, style: { cursor: 'grab', userSelect: 'none', opacity: 0.55, fontSize: 11, lineHeight: 1 }, children: '⠿' }),
+                jsx('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, children: name }),
+              ],
             })),
         }),
       ] }),
