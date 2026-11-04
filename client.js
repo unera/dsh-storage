@@ -866,7 +866,7 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
     ]
   });
 }
-function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSections }) {
+function BackupForm({ providers, t, initial, sections, onCancel, onSaved, onRefreshSections }) {
   const [name, setName] = (0, import_react.useState)(initial?.name ?? "");
   const [providerId, setProviderId] = (0, import_react.useState)(initial?.providerId ?? providers[0]?.id ?? "");
   const [directory, setDirectory] = (0, import_react.useState)(initial?.directory ?? "");
@@ -874,7 +874,6 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
   const [timeoutSeconds, setTimeoutSeconds] = (0, import_react.useState)(String(initial?.timeoutSeconds ?? 300));
   const [ignore, setIgnore] = (0, import_react.useState)((initial?.ignore ?? []).join("\n"));
   const [include, setInclude] = (0, import_react.useState)((initial?.include ?? []).join("\n"));
-  const [sections, setSections] = (0, import_react.useState)(initial?.sections ?? []);
   const [key, setKey] = (0, import_react.useState)("");
   const [schedule, setSchedule] = (0, import_react.useState)(initial?.schedule ?? "");
   const [error, setError] = (0, import_react.useState)(null);
@@ -889,7 +888,6 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
     try {
       const found = await onRefreshSections?.(initial.id);
       if (!Array.isArray(found)) throw new Error("refresh sections returned no list");
-      setSections(found);
     } catch (problem) {
       setError(problem.message);
     } finally {
@@ -1051,6 +1049,7 @@ function BackupPage(props) {
   const [editingId, setEditingId] = (0, import_react.useState)(null);
   const [runningId, setRunningId] = (0, import_react.useState)(null);
   const [result, setResult] = (0, import_react.useState)(null);
+  const [liveSections, setLiveSections] = (0, import_react.useState)(null);
   const fetchOnce = async () => {
     const body = await request("/backups");
     const next = Array.isArray(body.backups) ? body.backups : [];
@@ -1111,8 +1110,16 @@ function BackupPage(props) {
   const refreshSections = async (id) => {
     const body = await request("/backups/sections", { method: "POST", body: { id } });
     if (!Array.isArray(body.sections)) throw new Error("refresh sections returned no list");
-    await load();
+    setLiveSections(body.sections);
+    await load().catch(() => {
+    });
     return body.sections;
+  };
+  const closeForm = async (reload) => {
+    setAdding(false);
+    setEditingId(null);
+    setLiveSections(null);
+    if (reload) await load();
   };
   const form = adding ? { key: "new" } : editingId === null ? null : (() => {
     const backup = backups.find((item) => item.id === editingId);
@@ -1134,16 +1141,10 @@ function BackupPage(props) {
       providers,
       t,
       initial: form.initial,
+      sections: liveSections ?? form.initial?.sections ?? [],
       onRefreshSections: refreshSections,
-      onCancel: () => {
-        setAdding(false);
-        setEditingId(null);
-      },
-      onSaved: async () => {
-        setAdding(false);
-        setEditingId(null);
-        await load();
-      }
+      onCancel: () => closeForm(false),
+      onSaved: () => closeForm(true)
     }),
     backups.length === 0 && !loading ? (0, import_jsx_runtime.jsx)("p", { style: styles.hint, children: t("backup.empty") }) : null,
     backups.length === 0 ? null : (0, import_jsx_runtime.jsx)("table", { style: styles.table, children: [

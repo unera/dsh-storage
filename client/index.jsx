@@ -707,7 +707,7 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
 }
 
 /** The backup form: name, provider, directory, rotation, timeout, globs, key. */
-function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSections }) {
+function BackupForm({ providers, t, initial, sections, onCancel, onSaved, onRefreshSections }) {
   const [name, setName] = useState(initial?.name ?? '')
   const [providerId, setProviderId] = useState(initial?.providerId ?? providers[0]?.id ?? '')
   const [directory, setDirectory] = useState(initial?.directory ?? '')
@@ -715,7 +715,6 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
   const [timeoutSeconds, setTimeoutSeconds] = useState(String(initial?.timeoutSeconds ?? 300))
   const [ignore, setIgnore] = useState((initial?.ignore ?? []).join('\n'))
   const [include, setInclude] = useState((initial?.include ?? []).join('\n'))
-  const [sections, setSections] = useState(initial?.sections ?? [])
   const [key, setKey] = useState('')
   const [schedule, setSchedule] = useState(initial?.schedule ?? '')
   const [error, setError] = useState(null)
@@ -731,7 +730,7 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
     try {
       const found = await onRefreshSections?.(initial.id)
       if (!Array.isArray(found)) throw new Error('refresh sections returned no list')
-      setSections(found)
+      // The refreshed list arrives via the `sections` prop (BackupPage owns it).
     } catch (problem) {
       setError(problem.message)
     } finally {
@@ -903,6 +902,7 @@ export function BackupPage(props) {
   const [editingId, setEditingId] = useState(null)
   const [runningId, setRunningId] = useState(null)
   const [result, setResult] = useState(null)
+  const [liveSections, setLiveSections] = useState(null)
 
   const fetchOnce = async () => {
     const body = await request('/backups')
@@ -967,10 +967,19 @@ export function BackupPage(props) {
   const refreshSections = async id => {
     const body = await request('/backups/sections', { method: 'POST', body: { id } })
     if (!Array.isArray(body.sections)) throw new Error('refresh sections returned no list')
-    // Persist happened on the host; sync the list so `initial.sections` is fresh
-    // when the form is reopened.
-    await load()
+    // Drive the form's Found list from this live value, not from the form's
+    // local state, so a `load()` re-render can never clobber the fresh response.
+    setLiveSections(body.sections)
+    // Persist happened on the host; sync the list best-effort.
+    await load().catch(() => {})
     return body.sections
+  }
+
+  const closeForm = async reload => {
+    setAdding(false)
+    setEditingId(null)
+    setLiveSections(null)
+    if (reload) await load()
   }
 
   const form = adding
@@ -997,9 +1006,10 @@ export function BackupPage(props) {
         providers,
         t,
         initial: form.initial,
+        sections: liveSections ?? form.initial?.sections ?? [],
         onRefreshSections: refreshSections,
-        onCancel: () => { setAdding(false); setEditingId(null) },
-        onSaved: async () => { setAdding(false); setEditingId(null); await load() },
+        onCancel: () => closeForm(false),
+        onSaved: () => closeForm(true),
       }),
     backups.length === 0 && !loading ? jsx('p', { style: styles.hint, children: t('backup.empty') }) : null,
     backups.length === 0 ? null : jsx('table', { style: styles.table, children: [
