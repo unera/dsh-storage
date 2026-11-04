@@ -198,15 +198,20 @@ export async function finalizeCoreSection(directory, { dshHomeDir = dshHome(), s
 /**
  * Register the core participant's two listeners on a context.
  *
+ * The credentials store is read through `credentialsOf()` at section time, so
+ * the participant sees the store that is actually injected into the plugin
+ * child (a stale or root-level `ctx.credentials` must not be captured).
+ *
+ * @param options.credentialsOf - returns the current credentials store.
  * @returns disposers for the prepare and section listeners.
  */
-export function installCoreHook(ctx, { dshHomeDir = dshHome() } = {}) {
+export function installCoreHook(ctx, { dshHomeDir = dshHome(), credentialsOf = () => ctx.credentials } = {}) {
   const disposePrepare = ctx.on('dsh-storage/prepare-backup', workspace => {
     prepareCoreSection(workspace, { dshHomeDir })
   })
   const disposeSection = ctx.on('dsh-storage/backup-section', payload => {
     if (payload?.section !== CORE_SECTION_NAME) return undefined
-    return finalizeCoreSection(payload.directory, { dshHomeDir, store: ctx.credentials })
+    return finalizeCoreSection(payload.directory, { dshHomeDir, store: credentialsOf() })
   })
   return [disposePrepare, disposeSection]
 }

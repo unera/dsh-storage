@@ -1150,7 +1150,8 @@ function BackupPage(props) {
     error === null ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.error, children: error }),
     result === null ? null : (0, import_jsx_runtime.jsx)("div", { style: { ...styles.form, marginTop: 0 }, children: [
       (0, import_jsx_runtime.jsx)("strong", { children: result.code === "ok" ? t("backup.ok") : t("backup.failed") }),
-      (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: result.message })
+      (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: result.message }),
+      ...Array.isArray(result.details?.sections) ? result.details.sections.filter((item) => item.outcome !== "ok").map((item) => (0, import_jsx_runtime.jsx)("div", { key: item.name, style: styles.hint, children: `${item.name}: ${item.message ?? item.outcome}` })) : []
     ] }),
     form === null ? (0, import_jsx_runtime.jsx)("button", { style: styles.button, disabled: busy || loading, onClick: () => {
       setAdding(true);

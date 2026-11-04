@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -116,5 +116,42 @@ test('installCoreHook adds a core section to a real backup run', async () => {
     assert.equal(result.details.sections.find(item => item.name === CORE_SECTION_NAME).outcome, 'ok')
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('installCoreHook uses the injected credentials store via credentialsOf', async () => {
+  const dshHome = mkdtempSync(path.join(tmpdir(), 'dsh-core-inject-'))
+  try {
+    writeFileSync(path.join(dshHome, '.credentials.yaml'), 'refs:\n  OPENAI_API_KEY: sk-123\n', 'utf8')
+    const ctx = new Context()
+    const injected = {
+      async listRecords() { return [{ key: 'client-connection/browser-session', kind: 'browser-session' }] },
+      async readRecord(key) { return { key, kind: 'browser-session', payload: { secret: 's3' } } },
+      async resolve(ref) { return ref === 'OPENAI_API_KEY' ? { value: 'from-inject', source: 'file' } : undefined },
+      async set() {}, async describe() { return { configured: false } },
+    }
+    ctx.provide('credentials', injected)
+    await new Promise((resolve, reject) => {
+      ctx.inject(['credentials'], child => {
+        try {
+          installCoreHook(child, { dshHomeDir: dshHome, credentialsOf: () => child.credentials })
+          const workspace = new BackupWorkspace(path.join(dshHome, 'ws'))
+          mkdirSync(workspace.root, { recursive: true })
+          child.emit('dsh-storage/prepare-backup', workspace)
+          const coreDir = path.join(workspace.root, CORE_SECTION_NAME)
+          assert.equal(existsSync(coreDir), true, 'prepare created the core section')
+          child.parallel('dsh-storage/backup-section', { section: CORE_SECTION_NAME, directory: coreDir }).then(() => {
+            const credentials = JSON.parse(readFileSync(path.join(coreDir, 'credentials.json'), 'utf8'))
+            assert.equal(credentials.records[0].key, 'client-connection/browser-session')
+            assert.equal(credentials.refs.OPENAI_API_KEY.value, 'from-inject')
+            resolve()
+          }, reject)
+        } catch (error) {
+          reject(error)
+        }
+      })
+    })
+  } finally {
+    rmSync(dshHome, { recursive: true, force: true })
   }
 })

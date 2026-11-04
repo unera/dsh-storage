@@ -975,7 +975,9 @@ export const BACKUP_RENDERERS = {
   },
   backup_run: (_args, value) => {
     const sectionLine = Array.isArray(value.details?.sections) && value.details.sections.length > 0
-      ? `\nСекции: ${value.details.sections.map(item => `${item.name}:${item.outcome}`).join(' ')}`
+      ? `\nСекции: ${value.details.sections.map(item => item.outcome === 'ok'
+        ? `${item.name}:${item.outcome}`
+        : `${item.name}:${item.outcome} (${item.message ?? ''})`).join(' ')}`
       : ''
     const text = `${value.code === 'ok' ? 'Бэкап выполнен' : `Бэкап не выполнен (${value.code})`}: ${value.message}${sectionLine}`
     return [{ type: 'text', text }]
@@ -2178,7 +2180,7 @@ export function apply(ctx, config = {}) {
 
   // Core participant: capture the DSH configuration (profile/plugin manifests,
   // metadata/config files) and credentials for restoring a comparable node.
-  installCoreHook(ctx)
+  installCoreHook(ctx, { credentialsOf: () => shared.credentials })
 
   // External scripts: every executable script in the common directory becomes a
   // backup section, on top of the internal hooks.

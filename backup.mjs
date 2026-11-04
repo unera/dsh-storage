@@ -801,7 +801,7 @@ export async function runBackup(ctx, entry, filestore, resolveSecret, options = 
         killPids(pids)
         return {
           code: codeForOutcome(result.outcome),
-          message: `section ${JSON.stringify(name)} failed: ${result.message}`,
+          message: `section ${JSON.stringify(name)} failed: ${result.message ?? `outcome ${result.outcome}`}`,
           details: { sections: details, killed: pids, discovered },
         }
       }
