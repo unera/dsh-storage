@@ -676,8 +676,12 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
   const provider = providers.find(item => item.id === backup.providerId)
   const isRunning = running || backup.running === true
   const lastRun = backup.lastRun
-  const lastTone = lastRun == null ? null : lastRun.code === 'ok' ? styles.pillOk : styles.pillBad
-  const lastHint = lastRun == null ? '' : `${lastRun.code}${lastRun.message ? `: ${lastRun.message}` : ''}${lastRun.finishedAt ? ` @ ${lastRun.finishedAt}` : ''}`
+  // While running, only the spinner shows; the error pill appears only for a
+  // finished, non-ok attempt, and the ok pill only for a finished ok attempt.
+  const lastDone = lastRun != null && !isRunning && lastRun.code !== 'running'
+  const lastKind = lastDone ? (lastRun.code === 'ok' ? 'ok' : (lastRun.finishedAt != null ? 'err' : null)) : null
+  const lastTone = lastKind === 'ok' ? styles.pillOk : styles.pillBad
+  const lastHint = lastDone ? `${lastRun.code}${lastRun.message ? `: ${lastRun.message}` : ''}${lastRun.finishedAt ? ` @ ${lastRun.finishedAt}` : ''}` : ''
   return jsx('tr', {
     children: [
       jsx('td', { style: styles.td, children: [
@@ -689,7 +693,7 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
         jsx(Pill, { tone: styles.pillGrey, hint: t('backup.rotationHint'), children: `↻ ${backup.rotation}` }),
         backup.keyConfigured ? jsx(Pill, { tone: styles.pillOk, hint: t('backup.keySet'), children: '🔑' }) : null,
         backup.schedule === '' ? null : jsx(Pill, { tone: styles.pillFree, hint: t('backup.schedule'), children: backup.schedule }),
-        lastRun == null ? null : jsx(Pill, { tone: lastTone, hint: lastHint, children: lastRun.code === 'ok' ? t('backup.okShort') : t('backup.errShort') }),
+        lastKind == null ? null : jsx(Pill, { tone: lastTone, hint: lastHint, children: lastKind === 'ok' ? t('backup.okShort') : t('backup.errShort') }),
       ] }) }),
       jsx('td', { style: { ...styles.td, whiteSpace: 'nowrap', verticalAlign: 'top' }, children: jsx('div', { style: styles.buttonColumn, children: [
         isRunning
@@ -726,7 +730,8 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
     setError(null)
     try {
       const found = await onRefreshSections?.(initial.id)
-      setSections(Array.isArray(found) ? found : [])
+      if (!Array.isArray(found)) throw new Error('refresh sections returned no list')
+      setSections(found)
     } catch (problem) {
       setError(problem.message)
     } finally {
@@ -961,7 +966,11 @@ export function BackupPage(props) {
 
   const refreshSections = async id => {
     const body = await request('/backups/sections', { method: 'POST', body: { id } })
-    return Array.isArray(body.sections) ? body.sections : []
+    if (!Array.isArray(body.sections)) throw new Error('refresh sections returned no list')
+    // Persist happened on the host; sync the list so `initial.sections` is fresh
+    // when the form is reopened.
+    await load()
+    return body.sections
   }
 
   const form = adding

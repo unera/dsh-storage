@@ -217,6 +217,9 @@ test('the refresh-sections API runs prepare only and persists the discovered lis
       assert.equal(refreshed.status, 200)
       assert.deepEqual(refreshed.body.sections, ['dsh-storage.cfg', 'test'], 'self-backup and the always-on test participant are both discovered')
       assert.deepEqual(record.document.backups[0].sections, refreshed.body.sections)
+      // The list surface reflects the persisted sections after the refresh.
+      const listed = await callApi(record, { path: '/api/filestore/backups' })
+      assert.deepEqual(listed.body.backups[0].sections, ['dsh-storage.cfg', 'test'])
     } finally {
       await ctx.stop?.()
     }

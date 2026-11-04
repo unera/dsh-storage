@@ -841,8 +841,10 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
   const provider = providers.find((item) => item.id === backup.providerId);
   const isRunning = running || backup.running === true;
   const lastRun = backup.lastRun;
-  const lastTone = lastRun == null ? null : lastRun.code === "ok" ? styles.pillOk : styles.pillBad;
-  const lastHint = lastRun == null ? "" : `${lastRun.code}${lastRun.message ? `: ${lastRun.message}` : ""}${lastRun.finishedAt ? ` @ ${lastRun.finishedAt}` : ""}`;
+  const lastDone = lastRun != null && !isRunning && lastRun.code !== "running";
+  const lastKind = lastDone ? lastRun.code === "ok" ? "ok" : lastRun.finishedAt != null ? "err" : null : null;
+  const lastTone = lastKind === "ok" ? styles.pillOk : styles.pillBad;
+  const lastHint = lastDone ? `${lastRun.code}${lastRun.message ? `: ${lastRun.message}` : ""}${lastRun.finishedAt ? ` @ ${lastRun.finishedAt}` : ""}` : "";
   return (0, import_jsx_runtime.jsx)("tr", {
     children: [
       (0, import_jsx_runtime.jsx)("td", { style: styles.td, children: [
@@ -854,7 +856,7 @@ function BackupRow({ backup, providers, t, onRun, onEdit, onRemove, busy, runnin
         (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("backup.rotationHint"), children: `\u21BB ${backup.rotation}` }),
         backup.keyConfigured ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillOk, hint: t("backup.keySet"), children: "\u{1F511}" }) : null,
         backup.schedule === "" ? null : (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillFree, hint: t("backup.schedule"), children: backup.schedule }),
-        lastRun == null ? null : (0, import_jsx_runtime.jsx)(Pill, { tone: lastTone, hint: lastHint, children: lastRun.code === "ok" ? t("backup.okShort") : t("backup.errShort") })
+        lastKind == null ? null : (0, import_jsx_runtime.jsx)(Pill, { tone: lastTone, hint: lastHint, children: lastKind === "ok" ? t("backup.okShort") : t("backup.errShort") })
       ] }) }),
       (0, import_jsx_runtime.jsx)("td", { style: { ...styles.td, whiteSpace: "nowrap", verticalAlign: "top" }, children: (0, import_jsx_runtime.jsx)("div", { style: styles.buttonColumn, children: [
         isRunning ? (0, import_jsx_runtime.jsx)(Pill, { tone: styles.pillGrey, hint: t("backup.running"), children: (0, import_jsx_runtime.jsx)("span", { style: styles.spinner }) }) : (0, import_jsx_runtime.jsx)(IconButton, { icon: "test", title: t("backup.run"), disabled: busy, onClick: () => onRun(backup.id) }),
@@ -886,7 +888,8 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
     setError(null);
     try {
       const found = await onRefreshSections?.(initial.id);
-      setSections(Array.isArray(found) ? found : []);
+      if (!Array.isArray(found)) throw new Error("refresh sections returned no list");
+      setSections(found);
     } catch (problem) {
       setError(problem.message);
     } finally {
@@ -1107,7 +1110,9 @@ function BackupPage(props) {
   };
   const refreshSections = async (id) => {
     const body = await request("/backups/sections", { method: "POST", body: { id } });
-    return Array.isArray(body.sections) ? body.sections : [];
+    if (!Array.isArray(body.sections)) throw new Error("refresh sections returned no list");
+    await load();
+    return body.sections;
   };
   const form = adding ? { key: "new" } : editingId === null ? null : (() => {
     const backup = backups.find((item) => item.id === editingId);
