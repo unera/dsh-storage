@@ -493,3 +493,24 @@ test('a run persists lastRun into the settings document', async () => {
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('refresh sections is not blocked by an active run lock', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'dsh-storage-refresh-lock-'))
+  try {
+    const { ctx, record } = await boot({
+      providers: [{ id: 'st-0001', type: 'local', role: 'primary', options: { root } }],
+      backups: [{ id: 'bk-0001', name: 'daily', providerId: 'st-0001', directory: 'bk' }],
+    })
+    try {
+      acquireRun('bk-0001')
+      const refreshed = await callApi(record, { method: 'POST', path: '/api/filestore/backups/sections', body: { id: 'bk-0001' } })
+      assert.equal(refreshed.status, 200)
+      assert.deepEqual(refreshed.body.sections, ['dsh-storage.cfg', 'test'], 'prepare-only refresh is not blocked by running')
+    } finally {
+      releaseRun('bk-0001')
+      await ctx.stop?.()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

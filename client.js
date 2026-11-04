@@ -949,17 +949,17 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
       ] })
     ] }),
     (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
-      (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, flex: "0 0 35%", minWidth: 200 }, children: [
+      (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, flex: "0 0 35%", minWidth: 0 }, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("backup.ignore") }),
-        (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 64 }, value: ignore, placeholder: "logs\nnode_modules", onChange: (event) => setIgnore(event.target.value) }),
+        (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 64, minWidth: 0, width: "100%", boxSizing: "border-box" }, value: ignore, placeholder: "logs\nnode_modules", onChange: (event) => setIgnore(event.target.value) }),
         (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.ignoreHint") })
       ] }),
-      (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, flex: "0 0 35%", minWidth: 200 }, children: [
+      (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, flex: "0 0 35%", minWidth: 0 }, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("backup.include") }),
-        (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 64 }, value: include, placeholder: "db\n*", onChange: (event) => setInclude(event.target.value) }),
+        (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 64, minWidth: 0, width: "100%", boxSizing: "border-box" }, value: include, placeholder: "db\n*", onChange: (event) => setInclude(event.target.value) }),
         (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.includeHint") })
       ] }),
-      (0, import_jsx_runtime.jsx)("div", { style: { ...styles.field, flex: "0 0 30%", minWidth: 200 }, children: [
+      (0, import_jsx_runtime.jsx)("div", { style: { ...styles.field, flex: "0 0 30%", minWidth: 0 }, children: [
         (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
           (0, import_jsx_runtime.jsx)("span", { children: t("backup.found") }),
           (0, import_jsx_runtime.jsx)("button", {
@@ -972,7 +972,7 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
           })
         ] }),
         (0, import_jsx_runtime.jsx)("div", {
-          style: { ...styles.input, minHeight: 64, overflowY: "auto", background: "rgba(128,128,128,0.08)" },
+          style: { ...styles.input, minHeight: 64, minWidth: 0, overflowY: "auto", background: "rgba(128,128,128,0.08)" },
           children: sections.length === 0 ? (0, import_jsx_runtime.jsx)("div", { style: styles.hint, children: editing ? t("backup.foundEmpty") : t("backup.saveFirst") }) : sections.map((name2) => (0, import_jsx_runtime.jsx)("div", { key: name2, style: { fontSize: 12, lineHeight: 1.5 } }, name2))
         })
       ] })

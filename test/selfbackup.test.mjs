@@ -215,7 +215,7 @@ test('the refresh-sections API runs prepare only and persists the discovered lis
       assert.equal(saved.status, 201)
       const refreshed = await callApi(record, { method: 'POST', path: '/api/filestore/backups/sections', body: { id: 'bk-0001' } })
       assert.equal(refreshed.status, 200)
-      assert.ok(refreshed.body.sections.includes('dsh-storage.cfg'), 'the plugin discovers its own section')
+      assert.deepEqual(refreshed.body.sections, ['dsh-storage.cfg', 'test'], 'self-backup and the always-on test participant are both discovered')
       assert.deepEqual(record.document.backups[0].sections, refreshed.body.sections)
     } finally {
       await ctx.stop?.()

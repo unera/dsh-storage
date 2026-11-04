@@ -793,17 +793,17 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
       ] }),
     ] }),
     jsx('div', { style: styles.row, children: [
-      jsx('label', { style: { ...styles.field, flex: '0 0 35%', minWidth: 200 }, children: [
+      jsx('label', { style: { ...styles.field, flex: '0 0 35%', minWidth: 0 }, children: [
         jsx('span', { children: t('backup.ignore') }),
-        jsx('textarea', { style: { ...styles.input, minHeight: 64 }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
+        jsx('textarea', { style: { ...styles.input, minHeight: 64, minWidth: 0, width: '100%', boxSizing: 'border-box' }, value: ignore, placeholder: 'logs\nnode_modules', onChange: event => setIgnore(event.target.value) }),
         jsx('span', { style: styles.hint, children: t('backup.ignoreHint') }),
       ] }),
-      jsx('label', { style: { ...styles.field, flex: '0 0 35%', minWidth: 200 }, children: [
+      jsx('label', { style: { ...styles.field, flex: '0 0 35%', minWidth: 0 }, children: [
         jsx('span', { children: t('backup.include') }),
-        jsx('textarea', { style: { ...styles.input, minHeight: 64 }, value: include, placeholder: 'db\n*', onChange: event => setInclude(event.target.value) }),
+        jsx('textarea', { style: { ...styles.input, minHeight: 64, minWidth: 0, width: '100%', boxSizing: 'border-box' }, value: include, placeholder: 'db\n*', onChange: event => setInclude(event.target.value) }),
         jsx('span', { style: styles.hint, children: t('backup.includeHint') }),
       ] }),
-      jsx('div', { style: { ...styles.field, flex: '0 0 30%', minWidth: 200 }, children: [
+      jsx('div', { style: { ...styles.field, flex: '0 0 30%', minWidth: 0 }, children: [
         jsx('div', { style: { display: 'flex', alignItems: 'center', gap: 8 }, children: [
           jsx('span', { children: t('backup.found') }),
           jsx('button', {
@@ -817,7 +817,7 @@ function BackupForm({ providers, t, initial, onCancel, onSaved, onRefreshSection
               : jsx('span', { style: { fontSize: 15, lineHeight: 1 }, children: '↻' }),
           }),
         ] }),
-        jsx('div', { style: { ...styles.input, minHeight: 64, overflowY: 'auto', background: 'rgba(128,128,128,0.08)' }, children:
+        jsx('div', { style: { ...styles.input, minHeight: 64, minWidth: 0, overflowY: 'auto', background: 'rgba(128,128,128,0.08)' }, children:
           sections.length === 0
             ? jsx('div', { style: styles.hint, children: editing ? t('backup.foundEmpty') : t('backup.saveFirst') })
             : sections.map(name => jsx('div', { key: name, style: { fontSize: 12, lineHeight: 1.5 } }, name)),
