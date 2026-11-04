@@ -879,6 +879,7 @@ function BackupForm({ providers, t, initial, sections, onCancel, onSaved, onRefr
               ],
             })),
         }),
+        jsx('span', { style: styles.hint, children: t('backup.foundHint') }),
       ] }),
     ] }),
     jsx('label', { style: { ...styles.field, marginTop: 8 }, children: [

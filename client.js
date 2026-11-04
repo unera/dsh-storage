@@ -139,7 +139,8 @@ var DICTIONARIES = {
     "backup.refreshing": "refreshing\u2026",
     "backup.sections": "Sections",
     "backup.sectionsHint": "discovered sections from the last refresh",
-    "backup.found": "Registered",
+    "backup.found": "Available",
+    "backup.foundHint": "Sections registered by various plugins for backup.",
     "backup.foundEmpty": "press refresh to discover sections",
     "backup.saveFirst": "save first, then refresh",
     "backup.dragHint": "drag onto Ignore or Include"
@@ -247,7 +248,8 @@ var DICTIONARIES = {
     "backup.refreshing": "\u043E\u0431\u043D\u043E\u0432\u043B\u044F\u044E\u2026",
     "backup.sections": "\u0421\u0435\u043A\u0446\u0438\u0438",
     "backup.sectionsHint": "\u043E\u0431\u043D\u0430\u0440\u0443\u0436\u0435\u043D\u043D\u044B\u0435 \u0441\u0435\u043A\u0446\u0438\u0438 \u0441 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0435\u0433\u043E \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F",
-    "backup.found": "\u0417\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u043E",
+    "backup.found": "\u0415\u0441\u0442\u044C",
+    "backup.foundHint": "\u0421\u0435\u043A\u0446\u0438\u0438, \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u044B\u0435 \u0440\u0430\u0437\u043B\u0438\u0447\u043D\u044B\u043C\u0438 \u043F\u043B\u0430\u0433\u0438\u043D\u0430\u043C\u0438 \u0434\u043B\u044F \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u043E\u0433\u043E \u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u044F.",
     "backup.foundEmpty": "\u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C\xBB, \u0447\u0442\u043E\u0431\u044B \u043E\u0431\u043D\u0430\u0440\u0443\u0436\u0438\u0442\u044C \u0441\u0435\u043A\u0446\u0438\u0438",
     "backup.saveFirst": "\u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435, \u0437\u0430\u0442\u0435\u043C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u0435",
     "backup.dragHint": "\u043F\u0435\u0440\u0435\u0442\u0430\u0449\u0438\u0442\u0435 \u0432 \xAB\u0418\u0433\u043D\u043E\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C\xBB \u0438\u043B\u0438 \xAB\u0412\u043A\u043B\u044E\u0447\u0430\u0442\u044C\xBB"
@@ -1033,7 +1035,8 @@ ${name2}`);
               (0, import_jsx_runtime.jsx)("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: name2 })
             ]
           }))
-        })
+        }),
+        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("backup.foundHint") })
       ] })
     ] }),
     (0, import_jsx_runtime.jsx)("label", { style: { ...styles.field, marginTop: 8 }, children: [
