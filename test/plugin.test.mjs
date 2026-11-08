@@ -131,6 +131,8 @@ test('the prompt section appears only once a storage is enabled', async () => {
     const withStorage = await boot({ providers: [{ id: 'st-0001', type: 'local', role: 'primary', options: { root } }] })
     assert.equal(withStorage.record.sections.length, 1)
     assert.equal(withStorage.record.sections[0].name, 'tool:filestore')
+    // The harness registry rejects a section whose order is not a finite number.
+    assert.equal(Number.isFinite(withStorage.record.sections[0].order), true)
     await withStorage.ctx.stop?.()
   } finally {
     await rm(root, { recursive: true, force: true })

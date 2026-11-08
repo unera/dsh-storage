@@ -662,6 +662,13 @@ export function stateFor(code) {
 }
 
 /** The prompt text the model reads; static by design, so the cache holds. */
+// Placement of this plugin's prompt sections in the harness order table
+// (dsh-system-prompt SECTION_ORDERS). The file-tool block ends at TOOL_GREP
+// (1500) and TOOL_JOBS starts at 1600, so storage lands right after the file
+// group and backups right after the job tools.
+export const PROMPT_ORDER_FILESTORE = 1550
+export const PROMPT_ORDER_BACKUP = 1650
+
 export const PROMPT_TEXT = [
   'Remote storages are available through the storage tools.',
   '`storage_list` shows every configured storage with its id, type and state; call it before guessing where a file lives.',
@@ -2243,11 +2250,11 @@ export function apply(ctx, config = {}) {
     child.effect(() => {
       const hasStorage = filestore.entries().some(entry => entry.enabled)
       if (!hasStorage) return undefined
-      return child.systemPrompt.section({ name: 'tool:filestore', text: PROMPT_TEXT })
+      return child.systemPrompt.section({ name: 'tool:filestore', order: PROMPT_ORDER_FILESTORE, text: PROMPT_TEXT })
     })
     child.effect(() => {
       if (readBackups().length === 0) return undefined
-      return child.systemPrompt.section({ name: 'tool:backup', text: BACKUP_PROMPT_TEXT })
+      return child.systemPrompt.section({ name: 'tool:backup', order: PROMPT_ORDER_BACKUP, text: BACKUP_PROMPT_TEXT })
     })
   })
 
