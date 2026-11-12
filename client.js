@@ -1237,6 +1237,37 @@ function apply(ctx) {
     locale: NS,
     label: () => t("backup.nav.title")
   }, BackupPage));
+  ctx.slots.inject("settings.section.icon", () => ctx.slots.register({
+    name: "settings.section.icon",
+    id: SECTION_ID,
+    order: 36,
+    label: () => t("nav.title")
+  }, StorageIcon));
+  ctx.slots.inject("settings.section.icon", () => ctx.slots.register({
+    name: "settings.section.icon",
+    id: BACKUP_SECTION_ID,
+    order: 37,
+    label: () => t("backup.nav.title")
+  }, StorageIcon));
+}
+function StorageIcon(props) {
+  const size = typeof props?.size === "number" && props.size > 0 ? props.size : 16;
+  return (0, import_jsx_runtime.jsx)("svg", {
+    width: size,
+    height: size,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.4,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true",
+    children: [
+      (0, import_jsx_runtime.jsx)("ellipse", { cx: 8, cy: 4.2, rx: 5.4, ry: 2.2 }),
+      (0, import_jsx_runtime.jsx)("path", { d: "M2.6 4.2v7.6c0 1.2 2.4 2.2 5.4 2.2s5.4-1 5.4-2.2V4.2" }),
+      (0, import_jsx_runtime.jsx)("path", { d: "M2.6 8c0 1.2 2.4 2.2 5.4 2.2s5.4-1 5.4-2.2" })
+    ]
+  });
 }
 var inject = ["slots", "locale"];
 
