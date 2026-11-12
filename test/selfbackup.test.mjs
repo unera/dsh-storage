@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
@@ -6,6 +6,22 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { apply, SETTINGS_NAMESPACE } from '../index.mjs'
+
+/**
+ * Every test in this file reads the backup tree and the backup scripts from
+ * `$DSH_HOME` — `dshHome()` resolves it per call, defaulting to the developer's own
+ * `~/.dsh`. Without an isolated home these tests discover the *real* scripts of the
+ * machine and report sections nobody configured (`vds2` was a section of the author's
+ * home), so the expectations below would only hold on a clean laptop.
+ */
+const isolatedHome = mkdtempSync(path.join(tmpdir(), 'dsh-storage-home-'))
+const previousHome = process.env.DSH_HOME
+process.env.DSH_HOME = isolatedHome
+after(() => {
+  if (previousHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = previousHome
+  rmSync(isolatedHome, { recursive: true, force: true })
+})
 import {
   SELF_SECTION_NAME, collectCredentialRefs, credentialsDocument, finalizeSelfSection, prepareSelfSection,
   providerClientRef, resolveCredentialRefs, sanitizeConfigDocument, RESTORE_MD,

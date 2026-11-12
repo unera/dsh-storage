@@ -1,10 +1,27 @@
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { apply, ROUTE_PREFIX, SETTINGS_NAMESPACE, createStorageTools, nextEntryId, createFilestoreHandler, cronMatches, acquireRun, releaseRun } from '../index.mjs'
+
+/**
+ * Every test in this file reads the backup tree and the backup scripts from
+ * `$DSH_HOME` — `dshHome()` resolves it per call, defaulting to the developer's own
+ * `~/.dsh`. Without an isolated home these tests discover the *real* scripts of the
+ * machine and report sections nobody configured (`vds2` was a section of the author's
+ * home), so the expectations below would only hold on a clean laptop.
+ */
+const isolatedHome = mkdtempSync(path.join(tmpdir(), 'dsh-storage-home-'))
+const previousHome = process.env.DSH_HOME
+process.env.DSH_HOME = isolatedHome
+after(() => {
+  if (previousHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = previousHome
+  rmSync(isolatedHome, { recursive: true, force: true })
+})
 
 /**
  * Boot the plugin for real: a genuine cordis Context with the services it injects
