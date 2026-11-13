@@ -474,12 +474,19 @@ function octal(value, length) {
   return text.padStart(length - 1, '0') + '\0'
 }
 
-/** Split a POSIX path into ustar `name` (<=100) and `prefix` (<=155). */
+/**
+ * Split a POSIX path into ustar `name` (<=100) and `prefix` (<=155).
+ *
+ * A single segment longer than 100 bytes does not fit ustar at all: the caller has to
+ * put the real name into a PAX header instead. Returning a truncated name here would
+ * quietly rename the file on restore — and a name cut in the middle of a UTF-8
+ * sequence is not even the same string.
+ */
 function splitUstarPath(rel) {
   if (Buffer.byteLength(rel) <= 100) return { name: rel, prefix: '' }
   const segments = rel.split('/')
   let name = ''
-  let prefix = ''
+  const prefixParts = []
   while (segments.length > 0) {
     const candidate = segments.pop()
     const candidateName = candidate + (name === '' ? '' : `/${name}`)
@@ -487,16 +494,51 @@ function splitUstarPath(rel) {
       name = candidateName
       break
     }
+    // the last segment is already too long: ustar cannot hold it
+    if (segments.length === 0) return { name: '', prefix: '', tooLong: true }
     name = candidateName
   }
-  prefix = segments.join('/')
-  if (Buffer.byteLength(prefix) > 155) throw new BackupError('BACKUP_ARCHIVE', `tar path too long: ${rel}`)
+  const prefix = segments.join('/')
+  if (Buffer.byteLength(prefix) > 155) return { name: '', prefix: '', tooLong: true }
   return { name, prefix }
+}
+
+/** Cut a string to at most `limit` bytes without splitting a UTF-8 sequence. */
+function truncateUtf8(value, limit) {
+  let bytes = 0
+  let out = ''
+  for (const character of String(value)) {
+    const width = Buffer.byteLength(character)
+    if (bytes + width > limit) break
+    bytes += width
+    out += character
+  }
+  return out
+}
+
+/** The name of the PAX extended header entry itself: short and conventional. */
+const PAX_HEADER_NAME = 'PaxHeaders.0/entry'
+
+/**
+ * One `length key=value` record of a PAX extended header.
+ *
+ * The length covers the whole record, its own digits and the space, so the digits are
+ * counted twice: once to build the record, once with the final width.
+ */
+function paxRecord(key, value) {
+  const payload = ` ${key}=${value}\n`
+  let length = Buffer.byteLength(payload) + 1
+  while (String(length).length + Buffer.byteLength(payload) !== length) {
+    length = String(length).length + Buffer.byteLength(payload)
+  }
+  return Buffer.from(`${length}${payload}`, 'utf8')
 }
 
 /** One 512-byte ustar header for a file or directory entry. */
 export function tarHeader(entry) {
-  const { name, prefix } = splitUstarPath(entry.rel)
+  const { name, prefix } = entry.name === undefined
+    ? splitUstarPath(entry.rel)
+    : { name: entry.name, prefix: '' }
   const header = Buffer.alloc(512)
   const put = (offset, text) => header.write(text, offset, 'utf8')
   put(0, name)
@@ -506,7 +548,7 @@ export function tarHeader(entry) {
   put(124, octal(entry.size ?? 0, 12))
   put(136, octal(Math.floor((entry.mtime ?? 0) / 1000), 12))
   put(148, '        ') // chksum placeholder, filled below
-  put(156, entry.type === '5' ? '5' : '0')
+  put(156, entry.type ?? '0')
   put(157, '') // linkname empty
   header.write('ustar\0', 257, 'utf8')
   header.write('00', 263, 'utf8')
@@ -526,7 +568,20 @@ export function tarHeader(entry) {
 /** Yield the tar byte chunks of a workspace; files are read streaming. */
 export async function* tarChunks(root, options = {}) {
   for (const entry of collectEntries(root, options)) {
-    yield tarHeader(entry)
+    // A name ustar cannot hold gets a PAX extended header in front of the entry: the
+    // archive must carry the real name, not a truncated one
+    const split = splitUstarPath(entry.rel)
+    if (split.tooLong) {
+      const body = paxRecord('path', entry.rel)
+      const padded = Buffer.concat([body, Buffer.alloc((512 - (body.length % 512)) % 512)])
+      yield tarHeader({ name: PAX_HEADER_NAME, mode: 0o644, size: body.length, mtime: entry.mtime, type: 'x' })
+      yield padded
+      // the ustar header still needs a name in its 100-byte field: a short, valid
+      // fallback that PAX overrides on extraction
+      yield tarHeader({ ...entry, name: truncateUtf8(path.basename(entry.rel), 99) || 'entry' })
+    } else {
+      yield tarHeader(entry)
+    }
     if (entry.type === '0' && entry.size > 0) {
       const stream = createReadStream(entry.abs)
       for await (const chunk of stream) yield chunk

@@ -9,7 +9,7 @@ import {
   buildSectionPayload, classifySection, collectPids, decodeBackupKey, discoverSections, dispatchBackupStart,
   encodeBackupKey, filterSections, getRun, isIgnoredSection, makeBackupId, makeBackupKeyRef, nextBackupId,
   normalizeBackupEntry, normalizePids, processSection, readSectionStatus, releaseRun, runBackup, runBackupLocked,
-  runStateOf, sanitizeBackupName, trimBackupKey,
+  runStateOf, sanitizeBackupName, tarWorkspace, trimBackupKey,
 } from '../backup.mjs'
 import { createLocalDriver, normalizeEntry } from '../index.mjs'
 
@@ -481,4 +481,33 @@ test('runBackupLocked persists lastRun on start and finish', async () => {
     assert.ok(persisted[1].finishedAt)
     assert.equal(typeof persisted[1].message, 'string')
   })
+})
+
+
+test('a file name longer than one tar segment survives the archive', async () => {
+  // ustar has 100 bytes for a name: a long UTF-8 name does not fit at all, and the old
+  // writer cut it in the middle of a Cyrillic letter — the restore then produced a
+  // different file name, which is data corruption that only shows up when restoring
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-tar-long-'))
+  const extracted = mkdtempSync(path.join(tmpdir(), 'dsh-tar-long-out-'))
+  const long = 'Вадим Валерьевич Васильев - Трудная проблема сознания.epub'
+  try {
+    mkdirSync(path.join(root, 'books'), { recursive: true })
+    writeFileSync(path.join(root, 'books', long), 'x'.repeat(4096))
+    const chunks = []
+    await new Promise((resolve, reject) => {
+      const stream = tarWorkspace(root)
+      stream.on('data', chunk => chunks.push(chunk))
+      stream.on('end', resolve)
+      stream.on('error', reject)
+    })
+    const archive = Buffer.concat(chunks)
+    const listing = execFileSync('tar', ['-tf', '-'], { input: archive, encoding: 'utf8' })
+    assert.ok(listing.split('\n').includes(`books/${long}`), `имя должно быть целым, а в архиве:\n${listing}`)
+    execFileSync('tar', ['-xf', '-', '-C', extracted], { input: archive })
+    assert.equal(readFileSync(path.join(extracted, 'books', long), 'utf8').length, 4096)
+  } finally {
+    rmSync(extracted, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
+  }
 })
