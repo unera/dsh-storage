@@ -796,7 +796,21 @@ function BackupForm({ providers, t, initial, sections, onCancel, onSaved, onRefr
       ] }),
       jsx('label', { style: styles.field, children: [
         jsx('span', { children: t('backup.provider') }),
-        jsx('select', { style: styles.input, value: providerId, onChange: event => setProviderId(event.target.value), children: providers.map(item => jsx('option', { value: item.id, children: item.label }, item.id)) }),
+        // A backup may point at a storage that has been deleted (renamed by recreation):
+        // then the select has no matching option, the browser paints the first one and
+        // picks it — no change event, and the form keeps sending the dead id. The
+        // placeholder shows the truth and makes any real choice an actual change.
+        jsx('select', {
+          style: styles.input,
+          value: providerId,
+          onChange: event => setProviderId(event.target.value),
+          children: [
+            providers.some(item => item.id === providerId)
+              ? null
+              : jsx('option', { value: providerId, children: `${providerId} — ${t('backup.providerMissing')}` }, 'missing'),
+            ...providers.map(item => jsx('option', { value: item.id, children: item.label }, item.id)),
+          ],
+        }),
       ] }),
       jsx('label', { style: styles.field, children: [
         jsx('span', { children: t('backup.directory') }),

@@ -112,6 +112,7 @@ var DICTIONARIES = {
     "backup.name": "Name",
     "backup.namePlaceholder": "daily",
     "backup.provider": "Storage",
+    "backup.providerMissing": "missing storage",
     "backup.directory": "Folder",
     "backup.directoryHint": "POSIX path inside the storage; empty means the storage root.",
     "backup.rotation": "Rotation",
@@ -221,6 +222,7 @@ var DICTIONARIES = {
     "backup.name": "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435",
     "backup.namePlaceholder": "\u0435\u0436\u0435\u0434\u043D\u0435\u0432\u043D\u0430\u044F",
     "backup.provider": "\u0425\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435",
+    "backup.providerMissing": "\u0442\u0430\u043A\u043E\u0433\u043E \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430 \u043D\u0435\u0442",
     "backup.directory": "\u041A\u0430\u0442\u0430\u043B\u043E\u0433",
     "backup.directoryHint": "POSIX-\u043F\u0443\u0442\u044C \u0432\u043D\u0443\u0442\u0440\u0438 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430; \u043F\u0443\u0441\u0442\u043E \u2014 \u043A\u043E\u0440\u0435\u043D\u044C \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430.",
     "backup.rotation": "\u0420\u043E\u0442\u0430\u0446\u0438\u044F",
@@ -950,7 +952,19 @@ ${name2}`);
       ] }),
       (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("backup.provider") }),
-        (0, import_jsx_runtime.jsx)("select", { style: styles.input, value: providerId, onChange: (event) => setProviderId(event.target.value), children: providers.map((item) => (0, import_jsx_runtime.jsx)("option", { value: item.id, children: item.label }, item.id)) })
+        // A backup may point at a storage that has been deleted (renamed by recreation):
+        // then the select has no matching option, the browser paints the first one and
+        // picks it — no change event, and the form keeps sending the dead id. The
+        // placeholder shows the truth and makes any real choice an actual change.
+        (0, import_jsx_runtime.jsx)("select", {
+          style: styles.input,
+          value: providerId,
+          onChange: (event) => setProviderId(event.target.value),
+          children: [
+            providers.some((item) => item.id === providerId) ? null : (0, import_jsx_runtime.jsx)("option", { value: providerId, children: `${providerId} \u2014 ${t("backup.providerMissing")}` }, "missing"),
+            ...providers.map((item) => (0, import_jsx_runtime.jsx)("option", { value: item.id, children: item.label }, item.id))
+          ]
+        })
       ] }),
       (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("backup.directory") }),
