@@ -571,7 +571,7 @@ export class Filestore extends Service {
     const entries = this.entries()
     if (id === undefined || id === null || id === '') {
       const primary = entries.find(entry => entry.role === 'primary')
-      if (primary === undefined) throw new FilestoreError('FILESTORE_NO_PRIMARY', 'no storage is marked primary')
+      if (primary === undefined) throw new FilestoreError('FILESTORE_NO_PRIMARY', 'no storage is marked primary: name one explicitly or mark a storage as primary in the settings')
       return primary
     }
     const found = entries.find(entry => entry.id === id)
@@ -1361,10 +1361,10 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
     const providers = read()
     const index = providers.findIndex(entry => entry?.id === body?.id)
     if (index < 0) return { status: 404, body: { error: 'нет такой записи', code: 'FILESTORE_NOT_FOUND' } }
-    const current = normalizeEntry(providers[index], index)
-    if (current?.role === 'primary' && providers.length > 1) {
-      return { status: 409, body: { error: 'назначьте другое хранилище основным перед удалением', code: 'FILESTORE_PRIMARY_IN_USE' } }
-    }
+    // Deleting the primary one is allowed: a node that has just installed the plugin
+    // has no storages at all, and "primary" is a convenience, not a requirement. A
+    // call that names no id fails then with FILESTORE_NO_PRIMARY — that is the only
+    // place where the role matters.
     await writeProviders(providers.filter((_, position) => position !== index))
     return { status: 200, body: { deleted: true } }
   }
@@ -2013,9 +2013,7 @@ export function createFilestoreHandler(settings, filestore, credentialsOf = () =
         }
 
         if (request.method === 'DELETE') {
-          if (current.role === 'primary' && providers.length > 1) {
-            return json(response, 409, { error: 'назначьте другое хранилище основным перед удалением', code: 'FILESTORE_PRIMARY_IN_USE' })
-          }
+
           await writeProviders(providers.filter((_, position) => position !== index))
           return json(response, 200, { deleted: true })
         }

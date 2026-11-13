@@ -66,7 +66,7 @@ dsh plugin --profile web add @dr-co/dsh-storage
   "type": "local",            // пока только local
   "label": "Мои файлы",
   "enabled": true,
-  "role": "primary",          // primary | secondary
+  "role": "primary",          // primary | secondary; основное необязательно
   "readOnly": false,
   "basePath": "dsh",          // префикс внутри корня, можно пустой
   "credentialRef": "DSH_FILESTORE_ST_0001",
@@ -94,7 +94,7 @@ dsh plugin --profile web add @dr-co/dsh-storage
 | GET | `/__fs/providers` | список хранилищ, статусы, задан ли секрет |
 | POST | `/__fs/providers` | добавить (`secret` сразу уходит в credentials) |
 | PATCH | `/__fs/providers/:index` | изменить |
-| DELETE | `/__fs/providers/:index` | удалить (основное — только после смены основного) |
+| DELETE | `/__fs/providers/:index` | удалить (в том числе основное: без него вызов без id вернёт `FILESTORE_NO_PRIMARY`) |
 | POST | `/__fs/providers/:index/test` | проверка: запись → чтение → удаление пробника |
 | POST | `/__fs/providers/:index/primary` | назначить основным |
 

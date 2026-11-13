@@ -192,7 +192,7 @@ test('the admin API lists, adds, checks and promotes a storage', async () => {
   }
 })
 
-test('the primary storage cannot be deleted while another one could take over', async () => {
+test('the primary storage is deletable: a node may end up with no storages at all', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'dsh-storage-api-'))
   try {
     const { ctx, record } = await boot({
@@ -202,12 +202,17 @@ test('the primary storage cannot be deleted while another one could take over', 
       ],
     })
     try {
-      const refused = await callApi(record, { method: 'POST', path: '/api/filestore/providers/delete', body: { id: 'st-0001' } })
-      assert.equal(refused.status, 409)
-      assert.equal(refused.body.code, 'FILESTORE_PRIMARY_IN_USE')
-      const allowed = await callApi(record, { method: 'POST', path: '/api/filestore/providers/delete', body: { id: 'st-0002' } })
-      assert.equal(allowed.status, 200)
-      assert.equal(record.document.providers.length, 1)
+      // "primary" is a convenience, not a requirement: a freshly installed plugin has
+      // no storages at all, and the owner must be able to delete the last test entry
+      // without first promoting another one
+      const removed = await callApi(record, { method: 'POST', path: '/api/filestore/providers/delete', body: { id: 'st-0001' } })
+      assert.equal(removed.status, 200)
+      assert.deepEqual(record.document.providers.map(entry => entry.id), ['st-0002'])
+      assert.deepEqual(record.document.providers.map(entry => entry.role), ['secondary'], 'остальные не назначаются основными молча')
+
+      const last = await callApi(record, { method: 'POST', path: '/api/filestore/providers/delete', body: { id: 'st-0002' } })
+      assert.equal(last.status, 200)
+      assert.deepEqual(record.document.providers, [])
     } finally {
       await ctx.stop?.()
     }
@@ -223,6 +228,23 @@ test('a storage without credentials reports unauthorized instead of throwing', a
     assert.equal(response.status, 200)
     assert.equal(response.body.status.state, 'unauthorized')
     assert.match(response.body.status.message, /credential/i)
+  } finally {
+    await ctx.stop?.()
+  }
+})
+
+test('without a primary a call that names no storage fails with FILESTORE_NO_PRIMARY', async () => {
+  // the honest consequence of "primary is optional": nothing is silently chosen, the
+  // call says which storage it means or the node says there is none
+  const { ctx, record } = await boot({
+    providers: [{ id: 'st-0001', type: 'local', role: 'secondary', options: { root: '/tmp' } }],
+  })
+  try {
+    const tool = record.tools.find(item => item.name === 'storage_read')
+    await assert.rejects(
+      () => tool.execute({ key: 'anything' }),
+      error => error.code === 'FILESTORE_NO_PRIMARY' && /primary/.test(error.message),
+    )
   } finally {
     await ctx.stop?.()
   }
