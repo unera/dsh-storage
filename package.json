@@ -17,6 +17,7 @@
   "files": [
     "index.mjs",
     "s3.mjs",
+    "CHANGELOG.md",
     "webdav.mjs",
     "yadisk.mjs",
     "backup.mjs",
