@@ -28,7 +28,7 @@ import { createHash } from 'node:crypto'
 // Imported at the top even though `s3.mjs` imports primitives back from here: the
 // cycle is harmless because neither module touches the other at evaluation time,
 // and the host half is shipped as plain ESM, never bundled.
-import { createS3Driver } from './s3.mjs'
+import { createS3Driver, normalizePartSize, parseCredentials } from './s3.mjs'
 import { createWebdavDriver } from './webdav.mjs'
 import { createYandexDriver } from './yadisk.mjs'
 import {
@@ -1349,6 +1349,28 @@ export function createFilestoreApi(settings, filestore, credentialsOf = () => nu
       id: base?.id ?? (typeof body?.id === 'string' && /^st-[a-z0-9]{4,16}$/i.test(body.id) && !providers.some(entry => entry?.id === body.id) ? body.id : nextEntryId(providers)),
     }, existing >= 0 ? existing : providers.length)
     if (candidate === undefined) return { status: 400, body: { error: `unknown storage type ${JSON.stringify(body?.type)}`, code: 'FILESTORE_UNSUPPORTED' } }
+    // Both mistakes below are only discovered at the first upload otherwise —
+    // "wrong key, wrong bucket" arrives as an S3 error minutes into a backup.
+    if (candidate.type === 's3') {
+      const partSize = candidate.options?.partSize
+      if (partSize !== undefined && normalizePartSize(partSize) === null) {
+        return {
+          status: 400,
+          body: { error: 'размер части: целое число байт от 5 МиБ до 5 ГиБ', code: 'FILESTORE_BAD_PART_SIZE' },
+        }
+      }
+      const secretText = typeof body?.secret === 'string' ? body.secret.trim() : ''
+      if (secretText !== '') {
+        try {
+          parseCredentials(secretText)
+        } catch (problem) {
+          return {
+            status: 400,
+            body: { error: `секрет не разобран: ${problem.message}`, code: 'FILESTORE_CREDENTIAL_INVALID' },
+          }
+        }
+      }
+    }
     await saveSecret(candidate.credentialRef, body?.secret)
     await saveSecret(makeCredentialRef(`${candidate.id}-client`), body?.clientSecret)
     const next = existing >= 0 ? providers.map((entry, index) => (index === existing ? { ...candidate } : entry)) : [...providers, { ...candidate }]

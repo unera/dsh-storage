@@ -87,7 +87,9 @@ var DICTIONARIES = {
     "endpoint": "Endpoint",
     "endpointHint": "Leave empty for AWS; set it for Yandex, Selectel, R2, MinIO",
     "secret": "Secret",
-    "secretHint": 'JSON {"accessKeyId": "\u2026", "secretAccessKey": "\u2026"}. Stored in the credentials store, never in settings.',
+    "secretHint": 'Access key and secret, in any of three shapes: JSON {"accessKeyId": "\u2026", "secretAccessKey": "\u2026"}; two lines (key, then secret); or "key:secret" on one line. Stored in the credentials store, never in settings.',
+    "s3PartSize": "Upload part size, MiB",
+    "s3PartSizeHint": "Large files go up in parts of this size and are then assembled by the storage. 5 MiB minimum (an S3 rule), 16 MiB by default, 5120 at most.",
     "secretSet": "token is set",
     "clientSecretSet": "application secret is set",
     "save": "Save",
@@ -197,7 +199,9 @@ var DICTIONARIES = {
     "endpoint": "Endpoint",
     "endpointHint": "\u041F\u0443\u0441\u0442\u043E \u0434\u043B\u044F AWS; \u0443\u043A\u0430\u0437\u044B\u0432\u0430\u0439\u0442\u0435 \u0434\u043B\u044F \u042F\u043D\u0434\u0435\u043A\u0441, Selectel, R2, MinIO",
     "secret": "\u0421\u0435\u043A\u0440\u0435\u0442",
-    "secretHint": 'JSON {"accessKeyId": "\u2026", "secretAccessKey": "\u2026"}. \u041B\u0435\u0436\u0438\u0442 \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u0441\u0435\u043A\u0440\u0435\u0442\u043E\u0432, \u043D\u0435 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445.',
+    "secretHint": '\u041A\u043B\u044E\u0447 \u0438 \u0441\u0435\u043A\u0440\u0435\u0442 \u0432 \u043B\u044E\u0431\u043E\u043C \u0438\u0437 \u0442\u0440\u0451\u0445 \u0432\u0438\u0434\u043E\u0432: JSON {"accessKeyId": "\u2026", "secretAccessKey": "\u2026"}; \u0434\u0432\u0435 \u0441\u0442\u0440\u043E\u043A\u0438 (\u043A\u043B\u044E\u0447, \u0437\u0430\u0442\u0435\u043C \u0441\u0435\u043A\u0440\u0435\u0442); \u0438\u043B\u0438 "\u043A\u043B\u044E\u0447:\u0441\u0435\u043A\u0440\u0435\u0442" \u0432 \u043E\u0434\u043D\u0443 \u0441\u0442\u0440\u043E\u043A\u0443. \u041B\u0435\u0436\u0438\u0442 \u0432 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u0441\u0435\u043A\u0440\u0435\u0442\u043E\u0432, \u043D\u0435 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445.',
+    "s3PartSize": "\u0420\u0430\u0437\u043C\u0435\u0440 \u0447\u0430\u0441\u0442\u0438 \u043F\u0440\u0438 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0435, \u041C\u0438\u0411",
+    "s3PartSizeHint": "\u0411\u043E\u043B\u044C\u0448\u0438\u0435 \u0444\u0430\u0439\u043B\u044B \u0437\u0430\u043B\u0438\u0432\u0430\u044E\u0442\u0441\u044F \u0447\u0430\u0441\u0442\u044F\u043C\u0438 \u0442\u0430\u043A\u043E\u0433\u043E \u0440\u0430\u0437\u043C\u0435\u0440\u0430, \u043F\u043E\u0442\u043E\u043C \u0441\u043A\u043B\u0435\u0438\u0432\u0430\u044E\u0442\u0441\u044F \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435\u043C. \u041C\u0438\u043D\u0438\u043C\u0443\u043C 5 \u041C\u0438\u0411 (\u043F\u0440\u0430\u0432\u0438\u043B\u043E S3), \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E 16 \u041C\u0438\u0411, \u043C\u0430\u043A\u0441\u0438\u043C\u0443\u043C 5120.",
     "secretSet": "\u0442\u043E\u043A\u0435\u043D \u0437\u0430\u0434\u0430\u043D",
     "clientSecretSet": "\u0441\u0435\u043A\u0440\u0435\u0442 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u0437\u0430\u0434\u0430\u043D",
     "save": "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C",
@@ -452,6 +456,10 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
   const [bucket, setBucket] = (0, import_react.useState)(initial?.options?.bucket ?? "");
   const [region, setRegion] = (0, import_react.useState)(initial?.options?.region ?? "");
   const [endpoint, setEndpoint] = (0, import_react.useState)(initial?.options?.endpoint ?? "");
+  const [partSizeMiB, setPartSizeMiB] = (0, import_react.useState)(() => {
+    const bytes2 = Number(initial?.options?.partSize);
+    return Number.isFinite(bytes2) && bytes2 > 0 ? Math.round(bytes2 / (1024 * 1024)) : 16;
+  });
   const [baseUrl, setBaseUrl] = (0, import_react.useState)(initial?.options?.baseUrl ?? "");
   const [username, setUsername] = (0, import_react.useState)("");
   const [password, setPassword] = (0, import_react.useState)("");
@@ -480,7 +488,9 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
     if (type === "local") return { root: root.trim() };
     if (type === "webdav") return { baseUrl: baseUrl.trim() };
     if (type === "yadisk") return { ...clientId.trim() === "" ? {} : { clientId: clientId.trim() } };
-    return { bucket: bucket.trim(), ...region.trim() === "" ? {} : { region: region.trim() }, ...endpoint.trim() === "" ? {} : { endpoint: endpoint.trim() } };
+    const partMiB = Number(partSizeMiB);
+    const partBytes = Number.isFinite(partMiB) && partMiB >= 5 && partMiB <= 5120 ? Math.round(partMiB * 1024 * 1024) : 16 * 1024 * 1024;
+    return { bucket: bucket.trim(), ...region.trim() === "" ? {} : { region: region.trim() }, ...endpoint.trim() === "" ? {} : { endpoint: endpoint.trim() }, partSize: partBytes };
   };
   const secretFor = () => {
     if (type === "webdav") {
@@ -654,10 +664,18 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
           (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("endpointHint") })
         ] })
       ] }),
+      (0, import_jsx_runtime.jsx)("div", { style: styles.row, children: [
+        (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
+          (0, import_jsx_runtime.jsx)("span", { children: t("s3PartSize") }),
+          (0, import_jsx_runtime.jsx)("input", { style: styles.input, type: "number", min: 5, max: 5120, step: 1, value: partSizeMiB, onChange: (event) => setPartSizeMiB(event.target.value) }),
+          (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("s3PartSizeHint") })
+        ] })
+      ] }),
       (0, import_jsx_runtime.jsx)("label", { style: styles.field, children: [
         (0, import_jsx_runtime.jsx)("span", { children: t("secret") }),
         (0, import_jsx_runtime.jsx)("textarea", { style: { ...styles.input, minHeight: 60 }, value: secret, onChange: (event) => setSecret(event.target.value) }),
-        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: editing ? t("secretKeep") : t("secretHint") })
+        editing ? (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("secretKeep") }) : null,
+        (0, import_jsx_runtime.jsx)("span", { style: styles.hint, children: t("secretHint") })
       ] })
     ] }),
     error === null ? null : (0, import_jsx_runtime.jsx)("div", { style: styles.error, children: error }),

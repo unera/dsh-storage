@@ -24,7 +24,26 @@ import { FilestoreError, KEEP_FILE, normalizeKey } from './index.mjs'
 export const EMPTY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 
 /** Part size for multipart uploads; S3 requires at least 5 MiB except the last part. */
-export const DEFAULT_PART_SIZE = 8 * 1024 * 1024
+export const DEFAULT_PART_SIZE = 16 * 1024 * 1024
+
+/** S3 itself refuses a non-final part below 5 MiB, so the dashboard enforces this floor. */
+export const MIN_PART_SIZE = 5 * 1024 * 1024
+
+/** S3's own ceiling for one part. */
+export const MAX_PART_SIZE = 5 * 1024 * 1024 * 1024
+
+/**
+ * A part size the dashboard is allowed to store, or null.
+ *
+ * The driver below is deliberately more forgiving than this: tests and some
+ * third-party endpoints accept small parts, and the upload path only needs a
+ * number that is not nonsense.
+ */
+export function normalizePartSize(value) {
+  const size = Number(value)
+  if (!Number.isSafeInteger(size) || size < MIN_PART_SIZE || size > MAX_PART_SIZE) return null
+  return size
+}
 
 /** Anything larger than this is not read into memory in one go. */
 export const MAX_BUFFERED_PUT = 64 * 1024 * 1024
@@ -135,8 +154,14 @@ export function parseCredentials(raw) {
   }
   const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
   if (lines.length === 2) return { accessKeyId: lines[0].trim(), secretAccessKey: lines[1].trim() }
+  // Spaces around the colon are the operator's, not part of the key: pasting
+  // "KEY : SECRET" from a provider console is the normal way this arrives.
   const colon = text.indexOf(':')
-  if (colon > 0) return { accessKeyId: text.slice(0, colon), secretAccessKey: text.slice(colon + 1) }
+  if (colon > 0) {
+    const accessKeyId = text.slice(0, colon).trim()
+    const secretAccessKey = text.slice(colon + 1).trim()
+    if (accessKeyId !== '' && secretAccessKey !== '') return { accessKeyId, secretAccessKey }
+  }
   throw new FilestoreError('FILESTORE_CREDENTIAL_INVALID', 'S3 credentials must be JSON, "keyId:secret" or two lines')
 }
 
@@ -186,8 +211,12 @@ export function createS3Driver(entry, { resolveSecret, fetchFn = fetch, now = ()
   const endpoint = typeof options.endpoint === 'string' && options.endpoint.trim() !== '' ? options.endpoint.trim().replace(/\/+$/, '') : ''
   const pathStyle = endpoint !== '' ? options.forcePathStyle !== false : options.forcePathStyle === true
   // Real S3 wants at least 5 MiB per part except the last one; smaller values are
-  // accepted here for tests and for providers that are more forgiving.
-  const partSize = Number.isSafeInteger(options.partSize) && options.partSize >= 1024 ? options.partSize : DEFAULT_PART_SIZE
+  // accepted here for tests and for providers that are more forgiving. A number
+  // that arrives as a string (hand-edited settings) is still understood.
+  const requestedPart = Number(options.partSize)
+  const partSize = Number.isSafeInteger(requestedPart) && requestedPart >= 1024 && requestedPart <= MAX_PART_SIZE
+    ? requestedPart
+    : DEFAULT_PART_SIZE
   const base = entry.basePath === '' ? '' : entry.basePath
 
   const credentials = async () => {

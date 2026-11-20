@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.28] - 2026-11-20
+
+### Added
+
+- The S3 form has an upload part size: a large file goes up in parts of that size and the storage
+  assembles it. 16 MiB by default, 5 MiB minimum (an S3 rule), 5120 MiB at most; the value is kept
+  per storage in `options.partSize`.
+- Saving an S3 storage refuses a secret it cannot parse and a part size out of range, so both are
+  reported in the form instead of surfacing on the first upload, minutes into a backup.
+
+### Fixed
+
+- `key : secret` written with spaces around the colon no longer yields a key with a trailing space
+  and a secret with a leading one.
+- The secret field keeps naming the three accepted shapes while an existing storage is edited, not
+  only while a new one is added.
+
+### Changed
+
+- The credentials hint lists all three shapes — JSON, two lines, `key:secret` — instead of JSON alone.
+
+## [0.2.27] - 2026-11-20
+
+### Fixed
+
+- A backup no longer dies on a symlink that does not resolve: entries are described with `lstat`, so
+  a section copied from a live system (`/etc/alternatives/*`, a dovecot key pointing outside the
+  tree) does not throw `ENOENT` out of the async generator and take the process down.
+
 ## [0.2.26] - 2026-11-17
 
 ### Fixed

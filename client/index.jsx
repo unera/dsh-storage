@@ -229,6 +229,10 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
   const [bucket, setBucket] = useState(initial?.options?.bucket ?? '')
   const [region, setRegion] = useState(initial?.options?.region ?? '')
   const [endpoint, setEndpoint] = useState(initial?.options?.endpoint ?? '')
+  const [partSizeMiB, setPartSizeMiB] = useState(() => {
+    const bytes = Number(initial?.options?.partSize)
+    return Number.isFinite(bytes) && bytes > 0 ? Math.round(bytes / (1024 * 1024)) : 16
+  })
   const [baseUrl, setBaseUrl] = useState(initial?.options?.baseUrl ?? '')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -262,7 +266,9 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
     if (type === 'local') return { root: root.trim() }
     if (type === 'webdav') return { baseUrl: baseUrl.trim() }
     if (type === 'yadisk') return { ...(clientId.trim() === '' ? {} : { clientId: clientId.trim() }) }
-    return { bucket: bucket.trim(), ...(region.trim() === '' ? {} : { region: region.trim() }), ...(endpoint.trim() === '' ? {} : { endpoint: endpoint.trim() }) }
+    const partMiB = Number(partSizeMiB)
+    const partBytes = Number.isFinite(partMiB) && partMiB >= 5 && partMiB <= 5120 ? Math.round(partMiB * 1024 * 1024) : 16 * 1024 * 1024
+    return { bucket: bucket.trim(), ...(region.trim() === '' ? {} : { region: region.trim() }), ...(endpoint.trim() === '' ? {} : { endpoint: endpoint.trim() }), partSize: partBytes }
   }
 
   /**
@@ -467,10 +473,18 @@ function EntryForm({ types, t, first, initial, onCancel, onSaved, onRefresh }) {
             jsx('span', { style: styles.hint, children: t('endpointHint') }),
           ] }),
         ] }),
+        jsx('div', { style: styles.row, children: [
+          jsx('label', { style: styles.field, children: [
+            jsx('span', { children: t('s3PartSize') }),
+            jsx('input', { style: styles.input, type: 'number', min: 5, max: 5120, step: 1, value: partSizeMiB, onChange: event => setPartSizeMiB(event.target.value) }),
+            jsx('span', { style: styles.hint, children: t('s3PartSizeHint') }),
+          ] }),
+        ] }),
         jsx('label', { style: styles.field, children: [
           jsx('span', { children: t('secret') }),
           jsx('textarea', { style: { ...styles.input, minHeight: 60 }, value: secret, onChange: event => setSecret(event.target.value) }),
-          jsx('span', { style: styles.hint, children: editing ? t('secretKeep') : t('secretHint') }),
+          editing ? jsx('span', { style: styles.hint, children: t('secretKeep') }) : null,
+          jsx('span', { style: styles.hint, children: t('secretHint') }),
         ] }),
       ] }),
     error === null ? null : jsx('div', { style: styles.error, children: error }),
