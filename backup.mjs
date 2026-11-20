@@ -24,7 +24,7 @@
  *
  * @module @dr-co/dsh-storage/backup
  */
-import { createReadStream, createWriteStream, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, createWriteStream, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { createZstdCompress } from 'node:zlib'
 import { createHash, randomUUID } from 'node:crypto'
@@ -439,21 +439,47 @@ export async function discoverSections(ctx, options = {}) {
   }
 }
 
+/**
+ * `lstat` that answers null instead of throwing.
+ *
+ * A section copied from a live system can hold symlinks that do not resolve on
+ * this host at all (`/etc/alternatives/*` pointing into a /usr that is not here),
+ * and files that disappear between readdir and stat. Following a link with
+ * `statSync` turned that into an uncaught ENOENT that killed the whole process —
+ * with every session in it. A backup is the wrong place to be brave: an entry
+ * that cannot be described is skipped, not fatal.
+ */
+function safeLstat(absolute) {
+  try {
+    return lstatSync(absolute)
+  } catch {
+    return null
+  }
+}
+
 /** Recursively collect files and directories under `root` for an archive. */
 export function collectEntries(root, { exclude = [], rootName = '' } = {}) {
   const skip = new Set(exclude)
   const entries = []
   const relOf = childRel => (rootName === '' ? childRel : `${rootName}/${childRel}`)
   if (rootName !== '') {
-    entries.push({ rel: rootName, abs: root, type: '5', size: 0, mtime: statSync(root).mtimeMs })
+    const rootInfo = safeLstat(root)
+    entries.push({ rel: rootName, abs: root, type: '5', size: 0, mtime: rootInfo?.mtimeMs ?? 0 })
   }
   const walk = (dir, rel) => {
-    const names = readdirSync(dir, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))
+    let names
+    try {
+      names = readdirSync(dir, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))
+    } catch {
+      return // an unreadable directory is one lost subtree, not a failed backup
+    }
     for (const dirent of names) {
       if (rel === '' && skip.has(dirent.name)) continue
       const absolute = path.join(dir, dirent.name)
       const childRel = rel === '' ? dirent.name : `${rel}/${dirent.name}`
-      const info = statSync(absolute)
+      // lstat, not stat: the walk describes entries, it never follows them
+      const info = safeLstat(absolute)
+      if (info === null) continue
       if (dirent.isDirectory()) {
         entries.push({ rel: relOf(childRel), abs: absolute, type: '5', size: 0, mtime: info.mtimeMs })
         walk(absolute, childRel)

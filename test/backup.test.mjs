@@ -1,12 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
   acquireRun, atomicWriteStatus, archiveNamePattern, backupTimestamp, BackupWorkspace, buildBackupContainer,
-  buildSectionPayload, classifySection, collectPids, decodeBackupKey, discoverSections, dispatchBackupStart,
+  buildSectionPayload, classifySection, collectEntries, collectPids, decodeBackupKey, discoverSections, dispatchBackupStart,
   encodeBackupKey, filterSections, getRun, isIgnoredSection, makeBackupId, makeBackupKeyRef, nextBackupId,
   normalizeBackupEntry, normalizePids, processSection, readSectionStatus, releaseRun, runBackup, runBackupLocked,
   runStateOf, sanitizeBackupName, tarWorkspace, trimBackupKey,
@@ -508,6 +508,23 @@ test('a file name longer than one tar segment survives the archive', async () =>
     assert.equal(readFileSync(path.join(extracted, 'books', long), 'utf8').length, 4096)
   } finally {
     rmSync(extracted, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('collectEntries skips a symlink that does not resolve, and never throws', () => {
+  // Секция, снятая с живой системы, приносит ссылки в чужие каталоги: /etc/alternatives
+  // указывает в /usr, которого на этой машине может не быть. statSync по такой ссылке
+  // бросал ENOENT и убивал весь процесс вместе со всеми сессиями — бэкап не должен
+  // стоить дороже, чем данные, которые он сохраняет.
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-backup-dangling-'))
+  try {
+    mkdirSync(path.join(root, 'a'))
+    writeFileSync(path.join(root, 'a', 'file.txt'), 'hi')
+    symlinkSync('/nonexistent/target', path.join(root, 'a', 'dangling'))
+    symlinkSync('/nonexistent/target', path.join(root, 'dangling-top'))
+    assert.deepEqual(collectEntries(root).map(entry => entry.rel).sort(), ['a', 'a/file.txt'])
+  } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
